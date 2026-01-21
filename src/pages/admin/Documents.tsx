@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils';
 
 export default function AdminDocuments() {
   const { tenants, verifyDocument, verifyAllDocuments } = useData();
+
   const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState('');
   const [filter, setFilter] = useState<'all' | 'pending' | 'verified'>('all');
@@ -27,15 +28,15 @@ export default function AdminDocuments() {
   const verifiedCount = activeTenants.filter(t => t.documentsVerified).length;
   const pendingCount = activeTenants.filter(t => !t.documentsVerified).length;
 
-  const handleVerifyDoc = (tenantId: string, docId: string) => {
-    verifyDocument(tenantId, docId);
-    toast({ title: 'Document verified', description: 'Document has been marked as verified.' });
-  };
+ const handleVerifyDoc = (tenantId: string, docId: string) => {
+  verifyDocument(tenantId, docId); // ✅ bas call
+};
 
-  const handleVerifyAll = (tenantId: string) => {
-    verifyAllDocuments(tenantId);
-    toast({ title: 'All documents verified', description: 'All tenant documents have been verified.' });
-  };
+const handleVerifyAll = (tenantId: string) => {
+  verifyAllDocuments(tenantId); // ✅ bas call
+};
+
+
 
   return (
     <div className="space-y-4 md:space-y-6 animate-fade-in">
@@ -148,7 +149,7 @@ export default function AdminDocuments() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4 mt-4 pt-4 border-t border-border">
+            {/* <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4 mt-4 pt-4 border-t border-border">
               {tenant.documents.map((doc) => (
                 <div
                   key={doc.id}
@@ -200,7 +201,7 @@ export default function AdminDocuments() {
                   </div>
                 </div>
               ))}
-            </div>
+            </div> */}
           </div>
         ))}
 

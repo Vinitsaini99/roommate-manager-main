@@ -7,22 +7,40 @@ import RoomModal from "@/components/rooms/RoomModal";
 import { cn } from "@/lib/utils";
 import { formatCurrency } from "@/utils/formatters";
 import { useRef, useEffect } from "react";
+import api from "@/api/api";
+
+// import { Room } from "@/contexts/DataContext";
+
 
 
 
 export default function AdminRooms() {
-  const { rooms } = useData();
+  
+
+
+
+
+
+
+
   const [searchQuery, setSearchQuery] = useState("");
   const [filter, setFilter] = useState<"all" | "available" | "occupied">("all");
   const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
   const cardRef = useRef<HTMLDivElement | null>(null);
+const { rooms, tenants, fetchRooms, fetchTenants } = useData();
+
+useEffect(() => {
+  fetchRooms();
+  fetchTenants();
+}, [fetchRooms, fetchTenants]);
 
 
  const filteredRooms = useMemo(() => {
   return rooms.filter(room => {
-    const matchesSearch = room.roomNumber.toString().includes(searchQuery);
+    const roomNum = room.roomNumber?.toString() || '';
+    const matchesSearch = roomNum.includes(searchQuery);
     const matchesFilter =
       filter === 'all' ||
       (filter === 'available' && !room.isOccupied) ||
@@ -40,6 +58,62 @@ export default function AdminRooms() {
     setSelectedRoom(null);
     setIsModalOpen(true);
   };
+
+
+  // const filteredRooms = useMemo(() => {
+  //   return rooms.filter(room => {
+  //     const matchesSearch = room.roomNumber.toString().includes(searchQuery);
+  //     const matchesFilter =
+  //       filter === "all" ||
+  //       (filter === "available" && !room.isOccupied) ||
+  //       (filter === "occupied" && room.isOccupied);
+  //     return matchesSearch && matchesFilter;
+  //   });
+  // }, [rooms, searchQuery, filter]);
+
+  // const handleRoomClick = (room: Room) => {
+  //   setSelectedRoom(room);
+  //   setIsModalOpen(true);
+  // };
+
+  // const handleAddNewRoom = () => {
+  //   setSelectedRoom(null);
+  //   setIsModalOpen(true);
+  // };
+
+//   useEffect(() => {
+//   fetchRooms();
+// }, []);
+
+
+// const fetchRooms = async () => {
+//   const res = await api.get("/rooms/");
+//   if (res.data.length === 0) {
+//     initializeRooms(20); // 👈 frontend fallback
+//     return;
+//   }
+//   setRooms(res.data.map(mapRoomFromApi));
+// };
+
+
+
+// const mapRoomFromApi = (r: any): Room => ({
+//   id: String(r.id),
+//   roomNumber: r.room_number ?? r.number ?? r.id,
+//   type: r.type ?? "single",
+//   isAC: r.ac ?? false,
+//   rent: Number(r.rent ?? 0),
+//   isOccupied: Boolean(r.room), // tenant linked
+//   tenants: [],
+// });
+
+
+// 
+
+
+// useEffect(() => {
+//   fetchRooms();
+// }, []);
 
   useEffect(() => {
   function handleClickOutside(event: MouseEvent) {
@@ -61,7 +135,40 @@ export default function AdminRooms() {
 }, [activeRoomId]);
 
 
+
+// const addRoom = async (room: Omit<Room, "id">) => {
+//   const res = await api.post("/rooms/", {
+//     room_number: room.roomNumber,
+//     type: room.type,
+//     is_ac: room.isAC,
+//     rent: room.rent,
+//     is_occupied: room.isOccupied,
+//   });
+
+//   const savedRoom = mapRoomFromApi(res.data);
+//   setRooms(prev => [...prev, savedRoom]);
+// };
+
+// const updateRoom = async (id: string, updates: Partial<Room>) => {
+//   await api.put(`/rooms/${id}/`, {
+//     room_number: updates.roomNumber,
+//     type: updates.type,
+//     is_ac: updates.isAC,
+//     rent: updates.rent,
+//     is_occupied: updates.isOccupied,
+//   });
+
+//   setRooms(prev =>
+//     prev.map(r => (r.id === id ? { ...r, ...updates } : r))
+//   );
+// };
+
+
   return (
+
+
+
+    
     <div className="space-y-4 md:space-y-6 animate-fade-in">
       <div className="page-header flex flex-col gap-4">
         <div>
@@ -153,23 +260,25 @@ export default function AdminRooms() {
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 md:gap-4">
         
         {filteredRooms.map((room) => (
-          <div
-  ref={activeRoomId === room.id ? cardRef : null}
-  role="button"
-  tabIndex={0}
-  onClick={() => {
-    if (room.isOccupied) {
-      setActiveRoomId(room.id);
-    } else {
-      handleRoomClick(room);
-    }
-  }}
-  className={cn(
-    "relative rounded-xl border p-4 transition-all cursor-pointer",
-    activeRoomId === room.id
-      ? "ring-2 ring-primary shadow-lg"
-      : "border-border"
-  )}
+  <div
+    key={room.id}   // ✅ ADD THIS
+    ref={activeRoomId === room.id ? cardRef : null}
+    role="button"
+    tabIndex={0}
+    onClick={() => {
+      if (room.isOccupied) {
+        setActiveRoomId(room.id);
+      } else {
+        handleRoomClick(room);
+      }
+    }}
+    className={cn(
+      "relative rounded-xl border p-4 transition-all cursor-pointer",
+      activeRoomId === room.id
+        ? "ring-2 ring-primary shadow-lg"
+        : "border-border"
+    )}
+  
 
 
 
@@ -190,7 +299,7 @@ export default function AdminRooms() {
 
            <div className="flex items-center justify-between mb-3">
   <span className="text-base md:text-lg font-bold text-foreground">
-    #{room.roomNumber}
+    #{room.roomNumber || 'N/A'}
   </span>
 
   <div className="flex items-center gap-2">
@@ -204,25 +313,22 @@ export default function AdminRooms() {
     >
       {room.isOccupied ? "Occupied" : "Available"}
     </span>
-
- {room.isOccupied && activeRoomId === room.id && (
-  <div className="absolute inset-0 bg-black/40 flex items-center justify-center rounded-xl">
-    <Button
-      size="lg"
-      className="gradient-primary"
-      onClick={(e) => {
-        e.stopPropagation();
-        handleRoomClick(room);
-      }}
-    >
-      Edit Room
-    </Button>
   </div>
-)}
 
-
-
-  </div>
+  {room.isOccupied && activeRoomId === room.id && (
+    <div className="absolute inset-0 bg-black/40 flex items-center justify-center rounded-xl z-10">
+      <Button
+        size="lg"
+        className="gradient-primary"
+        onClick={(e) => {
+          e.stopPropagation();
+          handleRoomClick(room);
+        }}
+      >
+        Edit Room
+      </Button>
+    </div>
+  )}
 </div>
 
 
@@ -281,15 +387,51 @@ export default function AdminRooms() {
         </div>
       )}
 
-      <RoomModal
-        room={selectedRoom}
-        isOpen={isModalOpen}
-        onClose={() => {
-          setIsModalOpen(false);
-          setSelectedRoom(null);
-          setActiveRoomId(null); // ✅ reset
-        }}
-      />
+ <RoomModal
+  room={selectedRoom}
+  isOpen={isModalOpen}
+  onClose={() => setIsModalOpen(false)}
+  onSave={async (data) => {
+    try {
+      const payload: any = {
+        room_number: data.roomNumber,
+        room_type: data.type,
+        ac_non_ac: data.isAC ? "ac" : "non_ac",
+        room_rent: data.rent,
+        facility: 1,
+      };
+
+      console.log("🔥 Saving room with payload:", payload);
+      console.log("🔥 Selected room:", selectedRoom);
+      console.log("🔥 data object:", data);
+
+      if (selectedRoom) {
+        console.log("Updating room:", selectedRoom.id);
+        await api.put(`/rooms/${selectedRoom.id}/`, payload);
+      } else {
+        console.log("Creating new room");
+        const response = await api.post("/rooms/", payload);
+        console.log("Room creation response:", response.data);
+      }
+
+      console.log("Room saved successfully");
+      await fetchRooms();
+      setIsModalOpen(false);
+    } catch (error: any) {
+      console.error("Full error object:", error);
+      console.error("Error response data:", error?.response?.data);
+      const errorMsg = error?.response?.data?.message || error?.response?.data?.detail || error?.message || 'Unknown error';
+      alert(`Error saving room: ${errorMsg}`);
+    }
+  }}
+/>
+
+
+
+
+
+
+
     </div>
   );
 }

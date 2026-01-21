@@ -41,9 +41,9 @@ export default function AdminReports() {
 
   // Yearly data (last 3 years for comparison)
   const yearlyData = [
-    { year: '2022', revenue: 850000 },
-    { year: '2023', revenue: 1250000 },
-    { year: '2024', revenue: payments.filter(p => p.status === 'paid').reduce((sum, p) => sum + p.totalAmount, 0) || 720000 },
+    // { year: '2022', revenue: 850000 },
+    // { year: '2023', revenue: 1250000 },
+    // { year: '2024', revenue: payments.filter(p => p.status === 'paid').reduce((sum, p) => sum + p.totalAmount, 0) || 720000 },
   ];
 
   const totalRevenue = payments.filter(p => p.status === 'paid').reduce((sum, p) => sum + p.totalAmount, 0);
@@ -93,9 +93,9 @@ export default function AdminReports() {
           <div className="flex items-start justify-between">
             <div>
               <p className="text-sm text-muted-foreground">Avg Monthly</p>
-              <p className="text-2xl font-bold text-foreground mt-1">
+              {/* <p className="text-2xl font-bold text-foreground mt-1">
                 {formatCurrency(avgMonthlyRevenue)}
-              </p>
+              </p> */}
               <p className="text-xs text-muted-foreground mt-1">Per month avg</p>
             </div>
             <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
@@ -108,9 +108,9 @@ export default function AdminReports() {
           <div className="flex items-start justify-between">
             <div>
               <p className="text-sm text-muted-foreground">Collection Rate</p>
-              <p className="text-2xl font-bold text-foreground mt-1">
+              {/* <p className="text-2xl font-bold text-foreground mt-1">
                 {totalExpected > 0 ? Math.round((totalRevenue / totalExpected) * 100) : 0}%
-              </p>
+              </p> */}
               <p className="text-xs text-muted-foreground mt-1">Paid vs expected</p>
             </div>
             <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">

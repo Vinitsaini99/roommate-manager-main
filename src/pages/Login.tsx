@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 
 export default function Login() {
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -21,26 +21,32 @@ export default function Login() {
     setIsLoading(true);
 
     try {
-      const success = await login(email, password);
+      console.log("🔐 Login attempt with:", { username, password });
+      const success = await login(username, password);
+      
       if (success) {
         const user = JSON.parse(localStorage.getItem('rentease_user') || '{}');
+        console.log("✅ Login successful, user role:", user.role);
+        
         if (user.role === 'admin') {
           navigate('/admin');
         } else {
           navigate('/tenant');
         }
         toast({
-          title: 'Welcome back!',
+          title: 'स्वागत है! (Welcome!)',
           description: 'You have successfully logged in.',
         });
       } else {
+        console.log("❌ Login failed");
         toast({
           title: 'Login failed',
-          description: 'Invalid email or password.',
+          description: 'Invalid username or password.',
           variant: 'destructive',
         });
       }
     } catch (error) {
+      console.error("❌ Login error:", error);
       toast({
         title: 'Error',
         description: 'Something went wrong. Please try again.',
@@ -53,13 +59,14 @@ export default function Login() {
 
   const fillDemoCredentials = (role: 'admin' | 'tenant') => {
     if (role === 'admin') {
-      setEmail('admin@rentease.com');
-      setPassword('admin123');
+      setUsername('Admin');
+      setPassword('12345678');
     } else {
-      setEmail('tenant@rentease.com');
-      setPassword('tenant123');
+      setUsername('tenant@example.com');
+      setPassword('password123');
     }
   };
+
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-muted/30 p-4">
@@ -83,15 +90,15 @@ export default function Login() {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="username">Username</Label>
               <div className="relative">
                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
-                  id="email"
-                  type="email"
-                  placeholder="you@example.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  id="username"
+                  type="text"
+                  placeholder="Admin"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
                   className="pl-9"
                   required
                 />
