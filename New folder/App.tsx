@@ -30,12 +30,7 @@ import TenantDocuments from "./pages/tenant/TenantDocuments";
 const queryClient = new QueryClient();
 
 function ProtectedRoute({ children, role }: { children: React.ReactNode; role: 'admin' | 'tenant' }) {
-  const { isAuthenticated, user, isInitialized } = useAuth();
-
-  // Wait for auth to initialize before rendering anything
-  if (!isInitialized) {
-    return <div className="flex items-center justify-center h-screen">Loading...</div>;
-  }
+  const { isAuthenticated, user } = useAuth();
 
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;

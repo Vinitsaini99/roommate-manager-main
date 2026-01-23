@@ -19,14 +19,12 @@ interface AuthContextType {
   login: (identifier: string, password: string) => Promise<boolean>;
   logout: () => void;
   isAuthenticated: boolean;
-  isInitialized: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [isInitialized, setIsInitialized] = useState(false);
 
   /* ===================== RESTORE USER ON REFRESH ===================== */
   useEffect(() => {
@@ -34,18 +32,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const token = localStorage.getItem("ACCESS_TOKEN");
 
     if (savedUser && token) {
-      try {
-        setUser(JSON.parse(savedUser));
-        console.log("✅ User restored from localStorage");
-      } catch (e) {
-        console.error("Failed to parse saved user:", e);
-        localStorage.removeItem("rentease_user");
-      }
-    } else {
-      console.warn("No saved user or token found");
+      setUser(JSON.parse(savedUser));
     }
-    
-    setIsInitialized(true);
   }, []);
 
   /* ===================== LOGIN ===================== */
@@ -115,7 +103,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         login,
         logout,
         isAuthenticated,
-        isInitialized,
       }}
     >
       {children}

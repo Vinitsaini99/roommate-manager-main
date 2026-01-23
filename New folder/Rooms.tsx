@@ -36,16 +36,10 @@ useEffect(() => {
   fetchTenants();
 }, [fetchRooms, fetchTenants]);
 
-const getRoomNumber = (roomId?: string | number) => {
-  if (!roomId) return "—";
-
-  const room = rooms.find(r => String(r.id) === String(roomId) || String(r.roomId) === String(roomId));
-  return room?.roomId ?? "—";
-};
 
  const filteredRooms = useMemo(() => {
   return rooms.filter(room => {
-    const roomNum = room.roomId?.toString() || '';
+    const roomNum = room.roomNumber?.toString() || '';
     const matchesSearch = roomNum.includes(searchQuery);
     const matchesFilter =
       filter === 'all' ||
@@ -55,16 +49,14 @@ const getRoomNumber = (roomId?: string | number) => {
   });
 }, [rooms, searchQuery, filter]);
 
-// console.log("filteredRooms",filteredRooms);
-
   const handleRoomClick = (room: Room) => {
     setSelectedRoom(room);
     setIsModalOpen(true);
   };
 
   const handleAddNewRoom = () => {
-    fetchRooms();
-    fetchTenants();
+    setSelectedRoom(null);
+    setIsModalOpen(true);
   };
 
 
@@ -190,7 +182,7 @@ const getRoomNumber = (roomId?: string | number) => {
           className="gradient-primary w-full sm:w-auto"
         >
           <Plus className="h-4 w-4 mr-2" />
-          Refresh Rooms
+          Add New Room
         </Button>
       </div>
 
@@ -266,144 +258,168 @@ const getRoomNumber = (roomId?: string | number) => {
 
       {/* Room Cards Grid - Responsive: 1 col mobile, 2 tablet, 3-5 desktop */}
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 md:gap-4">
-        {filteredRooms && filteredRooms.length > 0 ? (
-          filteredRooms.map((room) => (
-            <div
-              key={room.id}
-              ref={activeRoomId === room.id ? cardRef : null}
-              role="button"
-              tabIndex={0}
-              onClick={() => handleRoomClick(room)}
-              className={cn(
-                "relative rounded-xl border p-4 transition-all cursor-pointer hover:shadow-md",
-                room.isOccupied
-                  ? "bg-destructive/5 border-destructive/20"
-                  : "bg-success/5 border-success/20",
-                activeRoomId === room.id ? "ring-2 ring-primary shadow-lg" : ""
-              )}
-            >
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-base md:text-lg font-bold text-foreground">
-                  #{room.roomId || 'N/A'}
-                </span>
-
-                <div className="flex items-center gap-2">
-                  <span
-                    className={cn(
-                      "px-2 py-0.5 rounded-full text-xs font-medium",
-                      room.isOccupied
-                        ? "bg-destructive/10 text-destructive"
-                        : "bg-success/10 text-success"
-                    )}
-                  >
-                    {room.isOccupied ? "Occupied" : "Available"}
-                  </span>
-                </div>
-
-                {room.isOccupied && activeRoomId === room.id && (
-                  <div className="absolute inset-0 bg-black/40 flex items-center justify-center rounded-xl z-10">
-                    <Button
-                      size="lg"
-                      className="gradient-primary"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleRoomClick(room);
-                      }}
-                    >
-                      Edit Room
-                    </Button>
-                  </div>
-                )}
-              </div>
-
-              <div className="space-y-2 text-sm">
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">Type</span>
-                  <span className="font-medium text-foreground">
-                    {room.type === "single"
-                      ? "Single"
-                      : room.type === "double"
-                      ? "Double"
-                      : "Triple"}{" "}
-                    Bed
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">AC</span>
-                  <span className="font-medium text-foreground">
-                    {room.isAC ? "Yes" : "No"}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">Rent</span>
-                  <span className="font-medium text-primary">
-                    {formatCurrency(room.rent)}
-                  </span>
-                </div>
-              </div>
-
-              {room.isOccupied && room.tenants.length > 0 && (
-                <div className="mt-4 pt-3 border-t border-border space-y-1">
-                  <p className="text-xs text-muted-foreground mb-1">Tenant(s)</p>
-                  {room.tenants.map((tenant) => (
-                    <p
-                      key={tenant.id}
-                      className="text-sm font-medium text-foreground truncate"
-                    >
-                      {tenant.firstName} {tenant.lastName}
-                    </p>
-                  ))}
-                </div>
-              )}
-            </div>
-          ))
-        ) : (
-          <div className="col-span-full flex flex-col items-center justify-center py-12 text-center">
-            <div className="h-16 w-16 rounded-full bg-muted flex items-center justify-center mb-4">
-              <DoorOpen className="h-8 w-8 text-muted-foreground" />
-            </div>
-            <p className="font-medium text-foreground">No rooms found</p>
-            <p className="text-sm text-muted-foreground mt-1">
-              Try adjusting your search or filters
-            </p>
-          </div>
-        )}
-      </div>
-
- {selectedRoom && (
-  <RoomModal
-    room={selectedRoom}
-    isOpen={isModalOpen}
-    onClose={() => setIsModalOpen(false)}
-    onSave={async (data) => {
-      try {
-        // Only update existing room details if needed
-        if (selectedRoom?.id) {
-          const payload: any = {
-            room_id: `ROOM-${data.roomNumber || selectedRoom.roomId}`,
-            room_number: data.roomNumber || selectedRoom.roomId,
-            room_type: data.type === "single" ? "Single" : data.type === "double" ? "Double" : "Triple",
-            ac_non_ac: data.isAC ? "AC" : "Non-AC",
-            room_rent: data.rent,
-            facility_id: 1,
-            remarks: "",
-            extra: {},
-          };
-
-          console.log("Updating room:", selectedRoom.id, payload);
-          await api.put(`/rooms/${selectedRoom.id}/`, payload);
-        }
-
-        await fetchRooms();
-        setIsModalOpen(false);
-      } catch (error: any) {
-        console.error("Error:", error?.response?.data || error.message);
-        const errorMsg = error?.response?.data?.message || error?.response?.data?.detail || error?.message || 'Unknown error';
-        alert(`Error: ${errorMsg}`);
+        
+        {filteredRooms.map((room) => (
+  <div
+    key={room.id}   // ✅ ADD THIS
+    ref={activeRoomId === room.id ? cardRef : null}
+    role="button"
+    tabIndex={0}
+    onClick={() => {
+      if (room.isOccupied) {
+        setActiveRoomId(room.id);
+      } else {
+        handleRoomClick(room);
       }
     }}
-  />
-)}
+    className={cn(
+      "relative rounded-xl border p-4 transition-all cursor-pointer",
+      activeRoomId === room.id
+        ? "ring-2 ring-primary shadow-lg"
+        : "border-border"
+    )}
+  
+
+
+
+//     {activeRoomId === room.id && (
+//   <Button
+//     size="sm"
+//     className="ml-2"
+//     onClick={(e) => {
+//       e.stopPropagation();
+//       handleRoomClick(room); // 🔥 modal open here
+//     }}
+//   >
+//     Edit
+//   </Button>
+// )}
+
+>
+
+           <div className="flex items-center justify-between mb-3">
+  <span className="text-base md:text-lg font-bold text-foreground">
+    #{room.roomNumber || 'N/A'}
+  </span>
+
+  <div className="flex items-center gap-2">
+    <span
+      className={cn(
+        "px-2 py-0.5 rounded-full text-xs font-medium",
+        room.isOccupied
+          ? "bg-destructive/10 text-destructive"
+          : "bg-success/10 text-success"
+      )}
+    >
+      {room.isOccupied ? "Occupied" : "Available"}
+    </span>
+  </div>
+
+  {room.isOccupied && activeRoomId === room.id && (
+    <div className="absolute inset-0 bg-black/40 flex items-center justify-center rounded-xl z-10">
+      <Button
+        size="lg"
+        className="gradient-primary"
+        onClick={(e) => {
+          e.stopPropagation();
+          handleRoomClick(room);
+        }}
+      >
+        Edit Room
+      </Button>
+    </div>
+  )}
+</div>
+
+
+            <div className="space-y-2 text-sm">
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Type</span>
+                <span className="font-medium text-foreground">
+                  {room.type === "single"
+                    ? "Single"
+                    : room.type === "double"
+                    ? "Double"
+                    : "Triple"}{" "}
+                  Bed
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">AC</span>
+                <span className="font-medium text-foreground">
+                  {room.isAC ? "Yes" : "No"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Rent</span>
+                <span className="font-medium text-primary">
+                  {formatCurrency(room.rent)}
+                </span>
+              </div>
+            </div>
+
+            {room.isOccupied && room.tenants.length > 0 && (
+            <div className="mt-4 pt-3 border-t border-border space-y-1">
+                <p className="text-xs text-muted-foreground mb-1">Tenant(s)</p>
+                {room.tenants.map((tenant) => (
+                  <p
+                    key={tenant.id}
+                    className="text-sm font-medium text-foreground truncate"
+                  >
+                    {tenant.firstName} {tenant.lastName}
+                  </p>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {filteredRooms.length === 0 && (
+        <div className="flex flex-col items-center justify-center py-12 text-center">
+          <div className="h-16 w-16 rounded-full bg-muted flex items-center justify-center mb-4">
+            <DoorOpen className="h-8 w-8 text-muted-foreground" />
+          </div>
+          <p className="font-medium text-foreground">No rooms found</p>
+          <p className="text-sm text-muted-foreground mt-1">
+            Try adjusting your search or filters
+          </p>
+        </div>
+      )}
+
+ <RoomModal
+  room={selectedRoom}
+  isOpen={isModalOpen}
+  onClose={() => setIsModalOpen(false)}
+  onSave={async (data) => {
+    try {
+      // MINIMAL PAYLOAD - only room_number and room_rent
+      const payload: any = {
+        room_number: data.roomNumber,
+        room_rent: data.rent,
+      };
+
+      console.log("📤 Creating room with minimal payload:", payload);
+
+      if (selectedRoom) {
+        console.log("Updating room:", selectedRoom.id);
+        await api.put(`/rooms/${selectedRoom.id}/`, payload);
+      } else {
+        console.log("Creating new room");
+        const response = await api.post("/rooms/", payload);
+        console.log("✅ Room created:", response.data);
+      }
+
+      console.log("✅ Success");
+      await fetchRooms();
+      setIsModalOpen(false);
+    } catch (error: any) {
+      console.error("❌ Error:", error?.response?.data || error.message);
+      const errorMsg = error?.response?.data?.message || error?.response?.data?.detail || error?.message || 'Unknown error';
+      alert(`Error: ${errorMsg}`);
+    }
+  }}
+/>
 
 
 

@@ -27,20 +27,28 @@ export default function AdminSettings() {
   };
 
   const handleInitializeRooms = () => {
-    if (totalRooms < 1 || totalRooms > 500) {
-      toast({
-        title: 'Invalid room count',
-        description: 'Please enter a number between 1 and 500.',
-        variant: 'destructive',
-      });
-      return;
-    }
-    initializeRooms(totalRooms);
+  if (totalRooms < 1 || totalRooms > 500) {
     toast({
-      title: 'Rooms initialized',
-      description: `${totalRooms} rooms have been created.`,
+      title: 'Invalid room count',
+      description: 'Please enter a number between 1 and 500.',
+      variant: 'destructive',
     });
-  };
+    return;
+  }
+
+  initializeRooms(totalRooms);
+
+  updateSettings({
+    ...settings,
+    totalRooms: totalRooms,
+  });
+
+  toast({
+    title: 'Rooms initialized',
+    description: `${totalRooms} rooms have been created.`,
+  });
+};
+
 
   const handleResetDefaults = () => {
     setElectricityRate(8);

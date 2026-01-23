@@ -27,7 +27,7 @@ export default function AdminDashboard() {
   const navigate = useNavigate();
   const { toast } = useToast();
 
-  // const [roomCount, setRoomCount] = useState(settings.totalRooms);
+  const [roomCount, setRoomCount] = useState(settings.totalRooms);
 
   const totalRooms = rooms.length;
   const occupiedRooms = rooms.filter(r => r.isOccupied).length;
@@ -53,32 +53,32 @@ export default function AdminDashboard() {
 
   const pendingVerifications = tenants.filter(t => t.isActive && !t.documentsVerified);
 
-  // const handleSetRooms = async () => {
-  //   if (roomCount < 1 || roomCount > 500) {
-  //     toast({
-  //       title: 'Invalid room count',
-  //       description: 'Please enter a number between 1 and 500.',
-  //       variant: 'destructive',
-  //     });
-  //     return;
-  //   }
+  const handleSetRooms = async () => {
+    if (roomCount < 1 || roomCount > 500) {
+      toast({
+        title: 'Invalid room count',
+        description: 'Please enter a number between 1 and 500.',
+        variant: 'destructive',
+      });
+      return;
+    }
     
-  //   try {
-  //     console.log(`🚀 Setting up ${roomCount} rooms...`);
-  //     await initializeRooms(roomCount);
-  //     toast({
-  //       title: '✅ Success',
-  //       description: `${roomCount} rooms created successfully!`,
-  //     });
-  //   } catch (err) {
-  //     console.error('❌ Error setting rooms:', err);
-  //     toast({
-  //       title: '❌ Error',
-  //       description: 'Failed to create rooms. Check console.',
-  //       variant: 'destructive',
-  //     });
-  //   }
-  // };
+    try {
+      console.log(`🚀 Setting up ${roomCount} rooms...`);
+      await initializeRooms(roomCount);
+      toast({
+        title: '✅ Success',
+        description: `${roomCount} rooms created successfully!`,
+      });
+    } catch (err) {
+      console.error('❌ Error setting rooms:', err);
+      toast({
+        title: '❌ Error',
+        description: 'Failed to create rooms. Check console.',
+        variant: 'destructive',
+      });
+    }
+  };
 
   const getRoomTypeLabel = (type: string) => {
     switch (type) {
@@ -110,7 +110,7 @@ export default function AdminDashboard() {
           </div>
           
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-            {/* <div className="flex items-center gap-2 flex-1">
+            <div className="flex items-center gap-2 flex-1">
               <Label className="text-sm whitespace-nowrap">Total Rooms:</Label>
               <Input
                 type="number"
@@ -124,7 +124,7 @@ export default function AdminDashboard() {
                 <Settings className="h-4 w-4 mr-1" />
                 Set
               </Button>
-            </div> */}
+            </div>
             <Button onClick={() => navigate('/admin/rooms')} size="sm" className="gradient-primary w-full sm:w-auto">
               Manage Rooms
               <ArrowRight className="h-4 w-4 ml-1" />
@@ -304,7 +304,7 @@ export default function AdminDashboard() {
                 </thead>
                 <tbody>
                   {tenants.filter(t => t.isActive).slice(0, 5).map((tenant) => {
-                    const room = rooms.find(r => r.roomId === tenant.roomId);
+                    const room = rooms.find(r => r.roomNumber === tenant.roomNumber);
                     return (
                       <tr key={tenant.id}>
                         <td>
@@ -322,7 +322,7 @@ export default function AdminDashboard() {
                             </div>
                           </div>
                         </td>
-                        <td className="font-medium text-sm">#{tenant.roomId}</td>
+                        <td className="font-medium text-sm">#{tenant.roomNumber}</td>
                         <td>
                           <span className="text-xs text-muted-foreground">
                             {getRoomTypeLabel(room?.type || 'single')} • {room?.isAC ? 'AC' : 'Non-AC'}
@@ -372,7 +372,7 @@ export default function AdminDashboard() {
                       <p className="font-medium text-foreground text-sm md:text-base">
                         {tenant.firstName} {tenant.lastName}
                       </p>
-                      <p className="text-xs md:text-sm text-muted-foreground">Room #{tenant.roomId}</p>
+                      <p className="text-xs md:text-sm text-muted-foreground">Room #{tenant.roomNumber}</p>
                     </div>
                   </div>
                   <Button 

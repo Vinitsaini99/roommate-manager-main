@@ -31,7 +31,6 @@ import { cn } from "@/lib/utils";
 import TenantFormFields from "./TenantFormFields";
 import DocumentUploadFields from "./DocumentUploadFields";
 
-
 interface RoomModalProps {
   room: Room | null;
   isOpen: boolean;
@@ -80,6 +79,12 @@ const emptyDocuments: DocumentData = {
   idProof: null,
 };
 
+const getRoomCapacity = (type: "single" | "double" | "triple") => {
+  if (type === "single") return 1;
+  if (type === "double") return 2;
+  return 3;
+};
+
 const STEPS = [
   { id: 1, title: "Room Details", icon: Home },
   { id: 2, title: "Tenant Details", icon: User },
@@ -105,7 +110,7 @@ export default function RoomModal({
   );
   const [isAC, setIsAC] = useState(false);
   const [customRent, setCustomRent] = useState<number>(0);
-  const [roomNumber, setRoomNumber] = useState<number>(0);
+  const [roomNumber, setRoomNumber] = useState<string>("");
 
   const { tenants, createTenant, rooms, getRent, settings } = useData();
   // Tenant details state - using refs to track initialization
@@ -132,14 +137,14 @@ export default function RoomModal({
 
   // <Select>
   //   {tenants.map((t) => (
-    //     <SelectItem key={t.id} value={t.id}>
+  //     <SelectItem key={t.id} value={t.id}>
   //       {t.firstName} {t.lastName}
   //     </SelectItem>
   //   ))}
   // </Select>;
 
   const [formData, setFormData] = useState<Omit<Room, "id">>({
-    roomNumber: room?.roomNumber ?? 0,
+    roomId: room?.roomId ?? "", // ✅ string
     type: room?.type ?? "single",
     isAC: room?.isAC ?? false,
     rent: room?.rent ?? 0,
@@ -184,7 +189,7 @@ export default function RoomModal({
       setRoomType(room.type);
       setIsAC(room.isAC);
       setCustomRent(room.rent);
-      setRoomNumber(room.roomNumber);
+      setRoomNumber(room.roomId);
 
       if (room.tenants.length > 0) {
         const t1 = room.tenants[0];
@@ -264,9 +269,22 @@ export default function RoomModal({
       // New room - reset all fields
       setRoomType("single");
       setIsAC(false);
+      // 🔥 Safely calculate next room number from roomId like "ROOM-1"
       const maxRoomNumber =
-        rooms.length > 0 ? Math.max(...rooms.map((r) => r.roomNumber)) : 100;
-      setRoomNumber(maxRoomNumber + 1);
+        rooms.length > 0
+          ? Math.max(
+              ...rooms.map((r) => {
+                if (!r.roomId) return 0;
+                const num = Number(r.roomId.replace("ROOM-", ""));
+                return isNaN(num) ? 0 : num;
+              }),
+            )
+          : 100;
+
+      // ✅ Always store as string (roomId is string)
+      setRoomNumber(`ROOM-${maxRoomNumber + 1}`);
+
+      // ✅ Reset rest safely
       setCustomRent(getRent("single", false));
       setTenant1(createEmptyTenant());
       setTenant2(createEmptyTenant());
@@ -287,7 +305,7 @@ export default function RoomModal({
     },
     [isAC, getRent],
   );
-  
+
   const handleACChange = useCallback(
     (value: boolean) => {
       setIsAC(value);
@@ -336,54 +354,62 @@ export default function RoomModal({
     }
   };
 
- const handleSave = async () => {
-  // Validation
-  if (!tenant1.firstName || !tenant1.lastName || !tenant1.email || !tenant1.phone) {
-    toast({
-      title: "Validation Error",
-      description: "Please fill in all required fields (First Name, Last Name, Email, Phone)",
-      variant: "destructive",
-    });
-    return;
-  }
+  const handleSave = async () => {
+    // Validation
+    if (
+      !tenant1.firstName ||
+      !tenant1.lastName ||
+      !tenant1.email ||
+      !tenant1.phone
+    ) {
+      toast({
+        title: "Validation Error",
+        description:
+          "Please fill in all required fields (First Name, Last Name, Email, Phone)",
+        variant: "destructive",
+      });
+      return;
+    }
 
-  if (!room) {
-    toast({
-      title: "Room not available",
-      description: "Please create room first",
-      variant: "destructive",
-    });
-    return;
-  }
-  
-  try {
-    await createTenant({
-      firstName: tenant1.firstName,
-      lastName: tenant1.lastName,
-      email: tenant1.email,
-      phone: tenant1.phone,
-      city: tenant1.city,
-      state: tenant1.state,
-      pincode: tenant1.pincode,
-      aadhaarNumber: tenant1.aadhaarNumber,
-      tokenMoney: tenant1.tokenMoney,
-      remarks,
-      roomId: room.id,
-      joinDate: new Date().toISOString().split('T')[0],
-    });
+    if (!room) {
+      toast({
+        title: "Room not available",
+        description: "Please create room first",
+        variant: "destructive",
+      });
+      return;
+    }
 
-    toast({ title: "Tenant added successfully" });
-    onClose();
-  } catch (error: any) {
-    console.error("Error saving tenant:", error);
-    toast({
-      title: "Error",
-      description: error?.message || error?.response?.data?.message || "Failed to add tenant. Please try again.",
-      variant: "destructive",
-    });
-  }
-};
+    try {
+      await createTenant({
+        firstName: tenant1.firstName,
+        lastName: tenant1.lastName,
+        email: tenant1.email,
+        phone: tenant1.phone,
+        city: tenant1.city,
+        state: tenant1.state,
+        pincode: tenant1.pincode,
+        aadhaarNumber: tenant1.aadhaarNumber,
+        tokenMoney: tenant1.tokenMoney,
+        remarks,
+        roomId: room.id, // ✅ backend FK only
+        joinDate: new Date().toISOString().split("T")[0],
+      });
 
+      toast({ title: "Tenant added successfully" });
+      onClose();
+    } catch (error: any) {
+      console.error("Error saving tenant:", error);
+      toast({
+        title: "Error",
+        description:
+          error?.message ||
+          error?.response?.data?.message ||
+          "Failed to add tenant. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
 
   // Memoized tenant form update handlers to prevent unnecessary re-renders
   const updateTenant1 = useCallback(
@@ -434,14 +460,17 @@ export default function RoomModal({
       <div className="space-y-2">
         <Label>Room Number *</Label>
         <Input
-          type="number"
-          value={roomNumber}
-          onChange={(e) => setRoomNumber(Number(e.target.value))}
-          placeholder="Enter room number (e.g., 1, 2, 3)"
+          type="text" // ✅ string based
+          value={roomNumber} // "ROOM-1"
+          onChange={(e) => setRoomNumber(e.target.value)}
+          placeholder="ROOM-1"
           disabled={!!room}
         />
+
         <p className="text-xs text-muted-foreground">
-          {room ? "Room number cannot be changed" : "Unique identifier for this room"}
+          {room
+            ? "Room number cannot be changed"
+            : "Unique identifier for this room"}
         </p>
       </div>
 
@@ -659,84 +688,102 @@ export default function RoomModal({
 
   // Step 2: Tenant Details
 
-  const renderTenantDetails = () => (
-    <div className="space-y-6">
-      {/* Existing Tenant Select */}
-      <div className="space-y-2">
-        <Label>Select Existing Tenant (optional)</Label>
+  const renderTenantDetails = () => {
+    // If editing an occupied room, show current tenants info
+    if (room?.isOccupied && room?.tenants.length > 0) {
+      return (
+        <div className="space-y-6">
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <p className="text-sm text-blue-800">
+              ℹ️ This room is currently occupied. Below are the current tenant
+              details:
+            </p>
+          </div>
+
+          {room.tenants.map((tenant, idx) => (
+            <div key={idx} className="bg-muted/50 rounded-xl p-4">
+              <h4 className="font-medium text-foreground mb-3">
+                Tenant {idx + 1}
+              </h4>
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div>
+                  <p className="text-muted-foreground">Name:</p>
+                  <p className="font-medium">
+                    {tenant.firstName} {tenant.lastName}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Email:</p>
+                  <p className="font-medium">{tenant.email}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Phone:</p>
+                  <p className="font-medium">{tenant.phone}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Join Date:</p>
+                  <p className="font-medium">{tenant.joinDate}</p>
+                </div>
+              </div>
+            </div>
+          ))}
+
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+            <p className="text-sm text-amber-800">
+              💡 To add a new tenant or modify this room, please use the "Move
+              Tenant to History" option first to free up the room.
+            </p>
+          </div>
+        </div>
+      );
+    }
+
+    // New room or empty room - show form to add tenant
+    return (
+      <div className="space-y-6">
+        {/* Existing Tenant Select */}
+        <div className="space-y-2">
+          <Label>Select Existing Tenant (optional)</Label>
 
           <Select onValueChange={(v) => setSelectedTenantId(Number(v))}>
-              
-          <SelectTrigger>
-            <SelectValue placeholder="Select tenant" />
-          </SelectTrigger>
+            <SelectTrigger>
+              <SelectValue placeholder="Select tenant" />
+            </SelectTrigger>
 
-          <SelectContent>
-            {tenants.map((t) => (
-              <SelectItem key={t.id} value={String(t.id)}>
-                {t.firstName} {t.lastName}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+            <SelectContent>
+              {tenants.map((t) => (
+                <SelectItem key={t.id} value={String(t.id)}>
+                  {t.firstName} {t.lastName}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <TenantFormFields
+          data={tenant1}
+          updateField={updateTenant1}
+          label="Tenant 1"
+        />
+
+        {(roomType === "double" || roomType === "triple") && (
+          <TenantFormFields
+            data={tenant2}
+            updateField={updateTenant2}
+            label="Tenant 2"
+          />
+        )}
+
+        {roomType === "triple" && (
+          <TenantFormFields
+            data={tenant3}
+            updateField={updateTenant3}
+            label="Tenant 3"
+          />
+        )}
       </div>
-
-      <TenantFormFields
-        data={tenant1}
-        updateField={updateTenant1}
-        label="Tenant 1"
-      />
-    </div>
-  );
-
-  // Document upload component
-  // const DocumentUploadFields = ({
-  //   documents,
-  //   updateDoc,
-  //   label
-  // }: {
-  //   documents: DocumentData;
-  //   updateDoc: (field: keyof DocumentData, value: string) => void;
-  //   label: string;
-  // }) => (
-  //   <div className="space-y-4">
-  //     <div className="flex items-center gap-2 text-foreground font-medium">
-  //       <FileText className="h-4 w-4" />
-  //       {label}
-  //     </div>
-
-  //     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-  //       <div className="space-y-2">
-  //         <Label>Address Proof *</Label>
-  //         <div className="flex items-center gap-2">
-  //           <Input
-  //             placeholder="Upload address proof"
-  //             value={documents.addressProof}
-  //             onChange={(e) => updateDoc('addressProof', e.target.value)}
-  //             className="flex-1"
-  //           />
-  //           <Button size="icon" variant="outline" type="button">
-  //             <Upload className="h-4 w-4" />
-  //           </Button>
-  //         </div>
-  //       </div>
-  //       <div className="space-y-2">
-  //         <Label>ID Proof *</Label>
-  //         <div className="flex items-center gap-2">
-  //           <Input
-  //             placeholder="Upload ID proof"
-  //             value={documents.idProof}
-  //             onChange={(e) => updateDoc('idProof', e.target.value)}
-  //             className="flex-1"
-  //           />
-  //           <Button size="icon" variant="outline" type="button">
-  //             <Upload className="h-4 w-4" />
-  //           </Button>
-  //         </div>
-  //       </div>
-  //     </div>
-  //   </div>
-  // );
+    );
+  };
 
   // Step 3: Documents
   const renderDocuments = () => (
@@ -782,7 +829,7 @@ export default function RoomModal({
         <div className="grid grid-cols-2 gap-2 text-sm">
           <span className="text-muted-foreground">Room Number:</span>
           <span className="font-medium">
-            #{room ? room.roomNumber : roomNumber}
+            #{room ? room.roomId : roomNumber}
           </span>
           <span className="text-muted-foreground">Room Type:</span>
           <span className="font-medium">
@@ -896,7 +943,7 @@ export default function RoomModal({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Home className="h-5 w-5 text-primary" />
-            {room ? `Room #${room.roomNumber}` : `Add New Room #${roomNumber}`}
+            {room ? `Room #${room.roomId}` : `Add New Room #${roomNumber}`}
           </DialogTitle>
         </DialogHeader>
 

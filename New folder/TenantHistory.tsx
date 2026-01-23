@@ -19,58 +19,28 @@ export default function AdminTenantHistory() {
 
   const activeTenants = tenants.filter(t => t.isActive);
 
-  const getRoomNumber = (roomId?: string | number) => {
-  if (!roomId) return "—";
-
-  const room = rooms.find(r => String(r.id) === String(roomId) || String(r.roomId) === String(roomId));
-  return room?.roomId ?? "—";
-};
-
   const filteredHistory = tenantHistory.filter(entry =>
     entry.tenantName.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const handleMoveTenant = async () => {
-  if (!selectedTenant) {
-    toast({
-      title: 'Error',
-      description: 'Please select a valid tenant',
-      variant: 'destructive',
+  const handleMoveTenant = () => {
+    if (!selectedTenantId) {
+      toast({ title: 'Error', description: 'Please select a tenant', variant: 'destructive' });
+      return;
+    }
+
+    // Just move the tenant - no automatic download
+    moveTenantToHistory(selectedTenantId);
+    toast({ 
+      title: '✅ Tenant Moved', 
+      description: 'Tenant has been moved to history. Click the download button to get the PDF.' 
     });
-    return;
-  }
-
-  try {
-    await moveTenantToHistory(selectedTenant.id);
-
-    toast({
-      title: '✅ Tenant Moved',
-      description: `${selectedTenant.firstName} moved to history successfully.`,
-    });
-
     setIsMovingTenant(false);
     setSelectedTenantId('');
-  } catch (error) {
-    toast({
-      title: '❌ Error',
-      description: 'Failed to move tenant to history',
-      variant: 'destructive',
-    });
-  }
-};
-  const selectedTenant = tenants.find(t => t.id === selectedTenantId);
-  const selectedRoom = rooms.find(r => r.roomId === selectedTenant?.roomId);
-
-
-
+  };
 
   const totalRentCollected = tenantHistory.reduce((sum, entry) => sum + entry.totalRentPaid, 0);
 
-
-
-
-
-  
   return (
     <div className="space-y-4 md:space-y-6 animate-fade-in">
       <div className="page-header flex flex-col gap-4">
@@ -101,7 +71,7 @@ export default function AdminTenantHistory() {
                 <SelectContent>
                   {activeTenants.map(t => (
                     <SelectItem key={t.id} value={t.id}>
-                      {t.firstName} {t.lastName} - Room #{getRoomNumber(t.roomId)}
+                      {t.firstName} {t.lastName} - Room #{t.roomNumber}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -168,7 +138,7 @@ export default function AdminTenantHistory() {
                 </div>
                 <div className="min-w-0">
                   <h3 className="font-semibold text-foreground text-sm md:text-base">{entry.tenantName}</h3>
-                  <p className="text-xs md:text-sm text-muted-foreground">Room #{getRoomNumber(entry.roomId)}</p>
+                  <p className="text-xs md:text-sm text-muted-foreground">Room #{entry.roomNumber}</p>
                 </div>
               </div>
 
@@ -198,15 +168,15 @@ export default function AdminTenantHistory() {
                         pincode: '',
                         aadhaarNumber: '',
                         tokenMoney: 0,
-                        roomId: entry.roomId,
+                        roomNumber: entry.roomNumber,
                         documents: [],
                         documentsVerified: false,
                         joinDate: entry.joinDate,
                         isActive: false,
                       };
                       const mockRoom = {
-                        id: String(entry.roomId),
-                        roomId: entry.roomId,
+                        id: String(entry.roomNumber),
+                        roomNumber: entry.roomNumber,
                         type: entry.roomType as 'single' | 'double' | 'triple',
                         isAC: entry.isAC,
                         rent: 0,

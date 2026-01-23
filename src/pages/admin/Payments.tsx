@@ -37,11 +37,18 @@ export default function AdminPayments() {
   });
 
   const selectedTenant = activeTenants.find(t => t.id === selectedTenantId);
-  const selectedRoom = rooms.find(r => r.roomNumber === selectedTenant?.roomNumber);
+  const selectedRoom = rooms.find(r => r.roomId === selectedTenant?.roomId);
 
   const unitsUsed = currReading - prevReading;
   const electricityAmount = unitsUsed * settings.electricityRate;
   const totalBill = (selectedRoom?.rent || 0) + electricityAmount;
+
+  const getRoomNumber = (roomId?: string | number) => {
+  if (!roomId) return "—";
+
+  const room = rooms.find(r => String(r.id) === String(roomId) || String(r.roomId) === String(roomId));
+  return room?.roomId ?? "—";
+};
 
   const handleAddPayment = () => {
     if (!selectedTenant || !selectedMonth) {
@@ -49,12 +56,17 @@ export default function AdminPayments() {
       return;
     }
 
+    if (!selectedRoom) {
+      toast({ title: 'Error', description: 'Room not found for this tenant', variant: 'destructive' });
+      return;
+    }
+
     addPayment({
       tenantId: selectedTenant.id,
       tenantName: `${selectedTenant.firstName} ${selectedTenant.lastName}`,
-      roomNumber: selectedTenant.roomNumber,
+      roomId: selectedRoom.roomId,  // ✅ Use room's roomId, not tenant's
       month: selectedMonth,
-      year: 2024,
+      year: 2026,
       previousReading: prevReading,
       currentReading: currReading,
       unitsUsed,
@@ -94,25 +106,50 @@ export default function AdminPayments() {
   const paidCount = payments.filter(p => p.status === 'paid').length;
   const pendingCount = payments.filter(p => p.status === 'pending').length;
   const totalCollected = payments.filter(p => p.status === 'paid').reduce((sum, p) => sum + p.totalAmount, 0);
- const sendWhatsAppReminder = (
+const sendWhatsAppReminder = (
   phone: string,
   tenantName: string,
-  roomNumber: number,
+  roomId: string,
   month: string,
-  amount: number
+  amount: number,
+  toast: any  // ✅ Added for error display
 ) => {
+  if (!phone) {
+    console.error("❌ Phone number is empty!");
+    toast({
+      title: "Error",
+      description: "Phone number not found for this tenant",
+      variant: "destructive",
+    });
+    return;
+  }
+
+  // ✅ Clean phone - remove spaces, dashes, +91 if present
+  let cleanPhone = phone.toString().replace(/[\s\-+]/g, "");
+  if (cleanPhone.startsWith("91")) {
+    cleanPhone = cleanPhone.substring(2);
+  }
+  if (cleanPhone.length === 10) {
+    cleanPhone = "91" + cleanPhone;
+  }
+
+  console.log("📱 WhatsApp Phone:", cleanPhone, "Original:", phone);
+  console.log("📋 Room:", roomId, "Month:", month, "Amount:", amount);
+
   const message = `Hello ${tenantName},
-  
-Your rent payment for Room #${roomNumber} (${month}) is pending.
+
+Your rent payment for Room #${roomId} (${month}) is pending.
 
 Total Amount: ₹${amount}
 
 Please make the payment at the earliest.
-Thank you.`;
+
+Thank you!`;
 
   const encodedMessage = encodeURIComponent(message);
-  const whatsappUrl = `https://wa.me/91${phone}?text=${encodedMessage}`;
+  const whatsappUrl = `https://wa.me/${cleanPhone}?text=${encodedMessage}`;
 
+  console.log("🔗 WhatsApp URL:", whatsappUrl);
   window.open(whatsappUrl, "_blank");
 };
 
@@ -149,7 +186,7 @@ Thank you.`;
                   <SelectContent>
                     {activeTenants.map(t => (
                       <SelectItem key={t.id} value={t.id}>
-                        {t.firstName} {t.lastName} - Room #{t.roomNumber}
+                        {t.firstName} {t.lastName} - Room #{t.roomId}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -164,7 +201,7 @@ Thank you.`;
                   </SelectTrigger>
                   <SelectContent>
                     {months.map(m => (
-                      <SelectItem key={m} value={m}>{m} 2024</SelectItem>
+                      <SelectItem key={m} value={m}>{m} 2026</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -344,7 +381,7 @@ Thank you.`;
                       <span className="font-medium text-foreground">{payment.tenantName}</span>
                     </div>
                   </td>
-                  <td className="font-medium">#{payment.roomNumber}</td>
+                  <td className="font-medium">#{payment.roomId}</td>
                   <td>{payment.month} {payment.year}</td>
                   <td>{payment.unitsUsed}</td>
                   <td>{formatCurrency(payment.electricityAmount)}</td>
@@ -368,32 +405,74 @@ Thank you.`;
                         >
                           Mark Paid
                         </Button>
-      <Button
+     <Button
   size="sm"
   variant="ghost"
   onClick={() => {
     const tenant = tenants.find(t => t.id === payment.tenantId);
 
-    if (!tenant || !tenant.phone) {
+    console.log("🔍 Debug Info:", {
+      tenant: tenant?.firstName,
+      phone: tenant?.phone,
+      roomId: payment.roomId,
+      month: payment.month,
+      amount: payment.totalAmount,
+    });
+
+    if (!tenant) {
       toast({
         title: "Error",
-        description: "Tenant phone number not found",
+        description: "Tenant not found",
         variant: "destructive",
       });
       return;
     }
 
+    if (!tenant.phone) {
+      toast({
+        title: "Error",
+        description: `No phone number for ${tenant.firstName} ${tenant.lastName}`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!payment.roomId) {
+      toast({
+        title: "Error",
+        description: "Room number not found for this payment",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // 1️⃣ WhatsApp open
     sendWhatsAppReminder(
       tenant.phone,
       payment.tenantName,
-      payment.roomNumber,
+      payment.roomId,
       payment.month,
-      payment.totalAmount
+      payment.totalAmount,
+      toast  // ✅ Pass toast
     );
+    
+    // 2️⃣ UI update
+    sendPaymentReminder(payment.id);
+
+    toast({
+      title: "Reminder Sent",
+      description: `WhatsApp reminder sent to ${tenant.firstName}`,
+    });
   }}
+  disabled={payment.reminderSent}
 >
-  <Bell className="h-4 w-4" />
+  <Bell className={cn(
+    "h-4 w-4",
+    payment.reminderSent && "text-muted-foreground"
+  )} />
 </Button>
+
+
 
 
 
@@ -427,7 +506,7 @@ Thank you.`;
                   </div>
                   <div>
                     <p className="font-medium text-foreground">{payment.tenantName}</p>
-                    <p className="text-sm text-muted-foreground">Room #{payment.roomNumber}</p>
+                    <p className="text-sm text-muted-foreground">Room #{getRoomNumber(payment.roomId)}</p>
                   </div>
                 </div>
                 <span className={cn(
@@ -473,10 +552,36 @@ Thank you.`;
   onClick={() => {
     const tenant = tenants.find(t => t.id === payment.tenantId);
 
-    if (!tenant || !tenant.phone) {
+    console.log("📱 Mobile - Debug Info:", {
+      tenant: tenant?.firstName,
+      phone: tenant?.phone,
+      roomId: payment.roomId,
+      month: payment.month,
+      amount: payment.totalAmount,
+    });
+
+    if (!tenant) {
       toast({
         title: "Error",
-        description: "Tenant phone number not found",
+        description: "Tenant not found",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!tenant.phone) {
+      toast({
+        title: "Error",
+        description: `No phone number for ${tenant.firstName} ${tenant.lastName}`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!payment.roomId) {
+      toast({
+        title: "Error",
+        description: "Room number not found for this payment",
         variant: "destructive",
       });
       return;
@@ -485,10 +590,18 @@ Thank you.`;
     sendWhatsAppReminder(
       tenant.phone,
       payment.tenantName,
-      payment.roomNumber,
+      payment.roomId,
       payment.month,
-      payment.totalAmount
+      payment.totalAmount,
+      toast  // ✅ Pass toast
     );
+
+    sendPaymentReminder(payment.id);
+
+    toast({
+      title: "Reminder Sent",
+      description: `WhatsApp reminder sent to ${tenant.firstName}`,
+    });
   }}
   disabled={payment.reminderSent}
 >
