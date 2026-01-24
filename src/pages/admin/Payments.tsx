@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import { UPI_CONFIG } from "@/contexts/upi";
+import React, { useState, useEffect } from 'react';
 import { CreditCard, Zap, Search, Plus, CheckCircle, Clock, IndianRupee, Bell } from 'lucide-react';
 import { useData } from '@/contexts/DataContext';
 import { Button } from '@/components/ui/button';
@@ -7,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
-import { formatCurrency } from '@/utils/formatters';
+import { formatCurrency, formatMonth } from '@/utils/formatters';
 import { cn } from '@/lib/utils';
 
 const months = [
@@ -16,7 +17,7 @@ const months = [
 ];
 
 export default function AdminPayments() {
-  const { tenants, payments, rooms, settings, updateSettings, addPayment, updatePayment, sendPaymentReminder } = useData();
+  const { tenants, payments, rooms, settings, updateSettings, addPayment, updatePayment, sendPaymentReminder, fetchPayments } = useData();
   const { toast } = useToast();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -26,18 +27,48 @@ export default function AdminPayments() {
   const [selectedMonth, setSelectedMonth] = useState('');
   const [prevReading, setPrevReading] = useState(0);
   const [currReading, setCurrReading] = useState(0);
+
+  const getTenantByBill = (bill: any) =>
+  tenants.find(t => t.id === bill.tenant);
+
+const getRoomByBill = (bill: any) => {
+  const tenant = getTenantByBill(bill);
+  return rooms.find(r => r.id === tenant?.roomPk);
+};
+
+const getUnits = (bill: any) =>
+  bill.current_reading - bill.previous_reading;
+
+const getElectricityAmount = (bill: any) =>
+  getUnits(bill) * bill.unit_charge;
+
   
 
   const activeTenants = tenants.filter(t => t.isActive);
 
-  const filteredPayments = payments.filter(p => {
-    const matchesSearch = p.tenantName.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesStatus = filterStatus === 'all' || p.status === filterStatus;
-    return matchesSearch && matchesStatus;
-  });
+  // Refresh payments on mount
+  useEffect(() => {
+    fetchPayments();
+  }, [fetchPayments]);
+
+ const filteredPayments = payments.filter(p => {
+  const tenant = tenants.find(t => t.id === p.tenant);
+  
+  // If search query is empty, match all
+  const matchesSearch = searchQuery === '' || (tenant
+    ? `${tenant.firstName} ${tenant.lastName}`
+        .toLowerCase()
+        .includes(searchQuery.toLowerCase())
+    : false);
+  
+  const matchesStatus = filterStatus === 'all' || p.status === filterStatus;
+  return matchesSearch && matchesStatus;
+});
 
   const selectedTenant = activeTenants.find(t => t.id === selectedTenantId);
-  const selectedRoom = rooms.find(r => r.roomId === selectedTenant?.roomId);
+  const selectedRoom = rooms.find(
+  r => r.id === selectedTenant?.roomPk
+);
 
   const unitsUsed = currReading - prevReading;
   const electricityAmount = unitsUsed * settings.electricityRate;
@@ -45,9 +76,7 @@ export default function AdminPayments() {
 
   const getRoomNumber = (roomId?: string | number) => {
   if (!roomId) return "—";
-
-  const room = rooms.find(r => String(r.id) === String(roomId) || String(r.roomId) === String(roomId));
-  return room?.roomId ?? "—";
+  return String(roomId); // ✅ Direct room number (1, 2, 3, ...)
 };
 
   const handleAddPayment = () => {
@@ -61,21 +90,26 @@ export default function AdminPayments() {
       return;
     }
 
+    const unitsUsed = currReading - prevReading;
+    const electricityAmount = unitsUsed * settings.electricityRate;
+    const totalAmount = (selectedRoom?.rent || 0) + electricityAmount;
+    const monthIndex = months.indexOf(selectedMonth) + 1;
+    const year = 2026;
+
     addPayment({
-      tenantId: selectedTenant.id,
-      tenantName: `${selectedTenant.firstName} ${selectedTenant.lastName}`,
-      roomId: selectedRoom.roomId,  // ✅ Use room's roomId, not tenant's
+      tenant: selectedTenant.id,
+      date_month: `2026-${String(monthIndex).padStart(2, "0")}-01`,
       month: selectedMonth,
-      year: 2026,
-      previousReading: prevReading,
-      currentReading: currReading,
-      unitsUsed,
-      electricityRate: settings.electricityRate,
-      electricityAmount,
-      rent: selectedRoom?.rent || 0,
-      totalAmount: totalBill,
+      year: year,
+      amount: totalAmount,
+      totalAmount: totalAmount,
+      units: unitsUsed,
+      electricityAmount: electricityAmount,
+      previous_reading: prevReading,
+      current_reading: currReading,
+      unit_charge: settings.electricityRate,
       status: 'pending',
-      reminderSent: false,
+      remarks: "",
     });
 
     toast({ title: 'Payment record added', description: 'New payment entry has been created.' });
@@ -90,10 +124,14 @@ export default function AdminPayments() {
     setCurrReading(0);
   };
 
-  const handleMarkAsPaid = (paymentId: string) => {
-    updatePayment(paymentId, { status: 'paid', paidDate: new Date().toISOString() });
-    toast({ title: 'Payment updated', description: 'Payment has been marked as paid.' });
-  };
+ const handleMarkAsPaid = (paymentId: string) => {
+  updatePayment(paymentId, { status: "paid" });
+  toast({
+    title: "Payment updated",
+    description: "Payment has been marked as paid.",
+  });
+};
+
 
   const handleSendReminder = (paymentId: string, tenantName: string) => {
     sendPaymentReminder(paymentId);
@@ -105,53 +143,76 @@ export default function AdminPayments() {
 
   const paidCount = payments.filter(p => p.status === 'paid').length;
   const pendingCount = payments.filter(p => p.status === 'pending').length;
-  const totalCollected = payments.filter(p => p.status === 'paid').reduce((sum, p) => sum + p.totalAmount, 0);
+const totalCollected = payments
+  .filter(p => p.status === "paid")
+  .reduce((sum, p) => sum + p.amount, 0);
+
 const sendWhatsAppReminder = (
   phone: string,
   tenantName: string,
   roomId: string,
   month: string,
   amount: number,
-  toast: any  // ✅ Added for error display
+  prevReading: number,
+  currReading: number,
+  unitsUsed: number,
+  electricityAmount: number,
+  roomRent: number,
+  toast: any
 ) => {
   if (!phone) {
-    console.error("❌ Phone number is empty!");
     toast({
       title: "Error",
-      description: "Phone number not found for this tenant",
+      description: "Phone number not found",
       variant: "destructive",
     });
     return;
   }
 
-  // ✅ Clean phone - remove spaces, dashes, +91 if present
-  let cleanPhone = phone.toString().replace(/[\s\-+]/g, "");
-  if (cleanPhone.startsWith("91")) {
-    cleanPhone = cleanPhone.substring(2);
-  }
-  if (cleanPhone.length === 10) {
-    cleanPhone = "91" + cleanPhone;
-  }
+  let cleanPhone = phone.replace(/[\s\-+]/g, "");
+  if (cleanPhone.startsWith("91")) cleanPhone = cleanPhone.substring(2);
+  if (cleanPhone.length === 10) cleanPhone = "91" + cleanPhone;
 
-  console.log("📱 WhatsApp Phone:", cleanPhone, "Original:", phone);
-  console.log("📋 Room:", roomId, "Month:", month, "Amount:", amount);
+  // ✅ UPI Payment Link
+  const upiLink = `upi://pay?pa=${UPI_CONFIG.upiId}&pn=${encodeURIComponent(
+    UPI_CONFIG.payeeName
+  )}&am=${amount}&cu=INR&tn=${encodeURIComponent(
+    `Room ${roomId} ${month} Rent`
+  )}`;
 
   const message = `Hello ${tenantName},
 
-Your rent payment for Room #${roomId} (${month}) is pending.
+📌 *Rent Payment Reminder*
 
-Total Amount: ₹${amount}
+🏠 Room: ${roomId}
+📅 Month: ${month}
 
-Please make the payment at the earliest.
+⚡ Electricity:
+• Previous: ${prevReading}
+• Current: ${currReading}
+• Units: ${unitsUsed}
 
-Thank you!`;
+💰 Charges:
+• Rent: ₹${roomRent}
+• Electricity: ₹${electricityAmount}
 
-  const encodedMessage = encodeURIComponent(message);
-  const whatsappUrl = `https://wa.me/${cleanPhone}?text=${encodedMessage}`;
+🧾 *Total Payable: ₹${amount}*
 
-  console.log("🔗 WhatsApp URL:", whatsappUrl);
-  window.open(whatsappUrl, "_blank");
+💳 *Pay via UPI:*
+${upiLink}
+
+(Click link to pay using GPay / PhonePe / Paytm)
+
+Thank you  
+– RentEase PG Management`;
+
+  window.open(
+    `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`,
+    "_blank"
+  );
 };
+
+
 
 
 // const tenant = tenants.find(t => t.id === payment.tenantId);
@@ -369,250 +430,199 @@ Thank you!`;
               </tr>
             </thead>
             <tbody>
-              {filteredPayments.map((payment) => (
-                <tr key={payment.id}>
-                  <td>
-                    <div className="flex items-center gap-3">
-                      <div className="h-8 w-8 rounded-full gradient-primary flex items-center justify-center">
-                        <span className="text-xs font-medium text-primary-foreground">
-                          {payment.tenantName.charAt(0)}
-                        </span>
-                      </div>
-                      <span className="font-medium text-foreground">{payment.tenantName}</span>
-                    </div>
-                  </td>
-                  <td className="font-medium">#{payment.roomId}</td>
-                  <td>{payment.month} {payment.year}</td>
-                  <td>{payment.unitsUsed}</td>
-                  <td>{formatCurrency(payment.electricityAmount)}</td>
-                  <td>{formatCurrency(payment.rent)}</td>
-                  <td className="font-semibold text-primary">{formatCurrency(payment.totalAmount)}</td>
-                  <td>
-                    <span className={cn(
-                      'status-badge',
-                      payment.status === 'paid' ? 'status-paid' : 'status-pending'
-                    )}>
-                      {payment.status === 'paid' ? 'Paid' : 'Pending'}
-                    </span>
-                  </td>
-                  <td>
-                    {payment.status === 'pending' && (
-                      <div className="flex items-center gap-2">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleMarkAsPaid(payment.id)}
-                        >
-                          Mark Paid
-                        </Button>
-     <Button
-  size="sm"
-  variant="ghost"
-  onClick={() => {
-    const tenant = tenants.find(t => t.id === payment.tenantId);
+             {filteredPayments.map(bill => {
+  const tenant = getTenantByBill(bill);
+  const room = getRoomByBill(bill);
+  const units = getUnits(bill);
+  const electricity = getElectricityAmount(bill);
+  const total = electricity + (room?.rent || 0);
 
-    console.log("🔍 Debug Info:", {
-      tenant: tenant?.firstName,
-      phone: tenant?.phone,
-      roomId: payment.roomId,
-      month: payment.month,
-      amount: payment.totalAmount,
-    });
+  return (
+    <tr key={bill.id}>
+      <td>{tenant ? `${tenant.firstName} ${tenant.lastName}` : "—"}</td>
+      <td>Room #{room?.roomId ?? "—"}</td>
+      <td>{formatMonth(bill.month || "May", bill.year || 2026)}</td> 
+      <td>{units}</td>
+      <td>{formatCurrency(electricity)}</td>
+      <td>{formatCurrency(room?.rent || 0)}</td>
+      <td>{formatCurrency(total)}</td>
+                    <td>
+                      <span className={cn(
+                        'status-badge text-xs',
+                        bill.status === 'paid' ? 'status-paid' : 'status-pending'
+                      )}>
+                        {bill.status === 'paid' ? 'Paid' : 'Pending'}
+                      </span>
+                    </td>
+                    <td>
+                      {bill.status === 'pending' && (
+                        <div className="flex gap-2">
+                          <Button size="sm" variant="outline" onClick={() => handleMarkAsPaid(bill.id)}>
+                            Mark Paid
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => {
+                              if (!tenant?.phone) {
+                                toast({
+                                  title: "Error",
+                                  description: "Phone not found",
+                                  variant: "destructive",
+                                });
+                                return;
+                              }
 
-    if (!tenant) {
-      toast({
-        title: "Error",
-        description: "Tenant not found",
-        variant: "destructive",
-      });
-      return;
-    }
+                              sendWhatsAppReminder(
+                                tenant.phone,
+                                `${tenant.firstName} ${tenant.lastName}`,
+                                room?.roomId || "",
+                                formatMonth(bill.month || "May", bill.year || 2026),
+                                electricity + (room?.rent || 0),
+                                bill.previous_reading,
+                                bill.current_reading,
+                                units,
+                                electricity,
+                                room?.rent || 0,
+                                toast
+                              );
 
-    if (!tenant.phone) {
-      toast({
-        title: "Error",
-        description: `No phone number for ${tenant.firstName} ${tenant.lastName}`,
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (!payment.roomId) {
-      toast({
-        title: "Error",
-        description: "Room number not found for this payment",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    // 1️⃣ WhatsApp open
-    sendWhatsAppReminder(
-      tenant.phone,
-      payment.tenantName,
-      payment.roomId,
-      payment.month,
-      payment.totalAmount,
-      toast  // ✅ Pass toast
-    );
-    
-    // 2️⃣ UI update
-    sendPaymentReminder(payment.id);
-
-    toast({
-      title: "Reminder Sent",
-      description: `WhatsApp reminder sent to ${tenant.firstName}`,
-    });
-  }}
-  disabled={payment.reminderSent}
->
-  <Bell className={cn(
-    "h-4 w-4",
-    payment.reminderSent && "text-muted-foreground"
-  )} />
-</Button>
-
-
-
-
-
-                      </div>
-                    )}
-                  </td>
-                </tr>
-              ))}
+                              sendPaymentReminder(bill.id);
+                            }}
+                            disabled={bill.reminder_sent}
+                          >
+                            <Bell className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
 
         {/* Mobile Cards */}
         <div className="md:hidden p-4 space-y-3">
-          {filteredPayments.map((payment) => (
-            <div 
-              key={payment.id}
-              className={cn(
-                'p-4 rounded-xl border',
-                payment.status === 'paid' 
-                  ? 'bg-success/5 border-success/20' 
-                  : 'bg-warning/5 border-warning/20'
-              )}
-            >
-              <div className="flex items-start justify-between mb-3">
-                <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-full gradient-primary flex items-center justify-center">
-                    <span className="text-sm font-medium text-primary-foreground">
-                      {payment.tenantName.charAt(0)}
-                    </span>
+          {filteredPayments.map((payment) => {
+            const tenant = getTenantByBill(payment);
+            const room = getRoomByBill(payment);
+            const units = getUnits(payment);
+            const electricity = getElectricityAmount(payment);
+
+            return (
+              <div 
+                key={payment.id}
+                className={cn(
+                  'p-4 rounded-xl border',
+                  payment.status === 'paid' 
+                    ? 'bg-success/5 border-success/20' 
+                    : 'bg-warning/5 border-warning/20'
+                )}
+              >
+                <div className="flex items-start justify-between mb-3">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-full gradient-primary flex items-center justify-center">
+                      <span className="text-sm font-medium text-primary-foreground">
+                        {tenant ? `${tenant.firstName} ${tenant.lastName}`.charAt(0) : "—"}
+                      </span>
+                    </div>
+                    <div>
+                      <p className="font-medium text-foreground">{tenant ? `${tenant.firstName} ${tenant.lastName}` : "—"}</p>
+                      <p className="text-sm text-muted-foreground">Room #{room?.roomId ?? "—"}</p>
+                    </div>
+                  </div>
+                  <span className={cn(
+                    'status-badge text-xs',
+                    payment.status === 'paid' ? 'status-paid' : 'status-pending'
+                  )}>
+                    {payment.status === 'paid' ? 'Paid' : 'Pending'}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 text-sm mb-3">
+                  <div>
+                    <span className="text-muted-foreground">Month:</span>
+                    <span className="ml-1 font-medium">{payment.month}</span>
                   </div>
                   <div>
-                    <p className="font-medium text-foreground">{payment.tenantName}</p>
-                    <p className="text-sm text-muted-foreground">Room #{getRoomNumber(payment.roomId)}</p>
+                    <span className="text-muted-foreground">Units:</span>
+                    <span className="ml-1 font-medium">{payment.units}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Rent:</span>
+                    <span className="ml-1 font-medium">{formatCurrency(room?.rent || 0)}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Electric:</span>
+                    <span className="ml-1 font-medium">{formatCurrency(electricity)}</span>
                   </div>
                 </div>
-                <span className={cn(
-                  'status-badge text-xs',
-                  payment.status === 'paid' ? 'status-paid' : 'status-pending'
-                )}>
-                  {payment.status === 'paid' ? 'Paid' : 'Pending'}
-                </span>
-              </div>
 
-              <div className="grid grid-cols-2 gap-2 text-sm mb-3">
-                <div>
-                  <span className="text-muted-foreground">Month:</span>
-                  <span className="ml-1 font-medium">{payment.month}</span>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">Units:</span>
-                  <span className="ml-1 font-medium">{payment.unitsUsed}</span>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">Rent:</span>
-                  <span className="ml-1 font-medium">{formatCurrency(payment.rent)}</span>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">Electric:</span>
-                  <span className="ml-1 font-medium">{formatCurrency(payment.electricityAmount)}</span>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between pt-3 border-t border-border/50">
-                <div>
-                  <span className="text-sm text-muted-foreground">Total:</span>
-                  <span className="ml-2 text-lg font-bold text-primary">{formatCurrency(payment.totalAmount)}</span>
-                </div>
-                {payment.status === 'pending' && (
-                  <div className="flex gap-2">
-                    <Button size="sm" variant="outline" onClick={() => handleMarkAsPaid(payment.id)}>
-                      Mark Paid
-                    </Button>
-                    <Button
-  size="sm"
-  variant="ghost"
-  onClick={() => {
-    const tenant = tenants.find(t => t.id === payment.tenantId);
-
-    console.log("📱 Mobile - Debug Info:", {
-      tenant: tenant?.firstName,
-      phone: tenant?.phone,
-      roomId: payment.roomId,
-      month: payment.month,
-      amount: payment.totalAmount,
-    });
-
-    if (!tenant) {
-      toast({
-        title: "Error",
-        description: "Tenant not found",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (!tenant.phone) {
-      toast({
-        title: "Error",
-        description: `No phone number for ${tenant.firstName} ${tenant.lastName}`,
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (!payment.roomId) {
-      toast({
-        title: "Error",
-        description: "Room number not found for this payment",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    sendWhatsAppReminder(
-      tenant.phone,
-      payment.tenantName,
-      payment.roomId,
-      payment.month,
-      payment.totalAmount,
-      toast  // ✅ Pass toast
-    );
-
-    sendPaymentReminder(payment.id);
-
-    toast({
-      title: "Reminder Sent",
-      description: `WhatsApp reminder sent to ${tenant.firstName}`,
-    });
-  }}
-  disabled={payment.reminderSent}
->
-  <Bell className={cn("h-4 w-4", payment.reminderSent && "text-muted-foreground")} />
-</Button>
-
+                <div className="flex items-center justify-between pt-3 border-t border-border/50">
+                  <div>
+                    <span className="text-sm text-muted-foreground">Total:</span>
+                    <span className="ml-2 text-lg font-bold text-primary">{formatCurrency(payment.amount)}</span>
                   </div>
-                )}
+                  {payment.status === 'pending' && (
+                    <div className="flex gap-2">
+                      <Button size="sm" variant="outline" onClick={() => handleMarkAsPaid(payment.id)}>
+                        Mark Paid
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          if (!tenant) {
+                            toast({
+                              title: "Error",
+                              description: "Tenant not found",
+                              variant: "destructive",
+                            });
+                            return;
+                          }
+
+                          if (!tenant.phone) {
+                            toast({
+                              title: "Error",
+                              description: `No phone number for ${tenant.firstName} ${tenant.lastName}`,
+                              variant: "destructive",
+                            });
+                            return;
+                          }
+
+                          sendWhatsAppReminder(
+                            tenant.phone,
+                            `${tenant.firstName} ${tenant.lastName}`,
+                            room?.roomId || "",
+                            payment.month,
+                            payment.amount,
+                            payment.previous_reading,
+                            payment.current_reading,
+                            payment.units,
+                            electricity,
+                            room?.rent || 0,
+                            toast
+                          );
+
+                          sendPaymentReminder(payment.id);
+
+                          toast({
+                            title: "Reminder Sent",
+                            description: `WhatsApp reminder sent to ${tenant.firstName}`,
+                          });
+                        }}
+                        disabled={payment.reminder_sent}
+                      >
+                        <Bell className={cn("h-4 w-4", payment.reminder_sent && "text-muted-foreground")} />
+                      </Button>
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         {filteredPayments.length === 0 && (

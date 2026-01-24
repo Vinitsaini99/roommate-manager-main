@@ -1,7 +1,7 @@
 import axios from "axios";
 
 const BACKEND =
-  import.meta.env.VITE_API_URL || "http://192.168.1.10:8000";
+  import.meta.env.VITE_API_URL || "https://albenuspeter.pythonanywhere.com/";
 
 const api = axios.create({
   baseURL: BACKEND,

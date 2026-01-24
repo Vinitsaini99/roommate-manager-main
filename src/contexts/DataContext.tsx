@@ -63,24 +63,30 @@ interface CreateTenantPayload {
   joinDate?: string;
 }
 
+// DataContext.tsx
 export interface Payment {
   id: string;
-  tenantId: string;
-  tenantName: string;
-  roomId: string; 
-  month: string;
-  year: number;
-  previousReading: number;
-  currentReading: number;
-  unitsUsed: number;
-  electricityRate: number;
-  electricityAmount: number;
-  rent: number;
-  totalAmount: number;
-  status: "paid" | "pending";
-  paidDate?: string;
-  reminderSent?: boolean;
+
+  tenant: string;          // FK
+  date_month: string;      // YYYY-MM-DD
+  month?: string;          // For display (e.g., 'May')
+  year?: number;           // For filtering (e.g., 2024)
+  amount?: number;         // Total amount (rent + electricity)
+  totalAmount?: number;    // Same as amount
+  units?: number;          // Units used (current - previous reading)
+  electricityAmount?: number; // Electricity cost
+
+  previous_reading: number;
+  current_reading: number;
+  unit_charge: number;
+
+  status: 'paid' | 'pending';
+  reminder_sent?: boolean;
+  remarks?: string;
 }
+
+
+
 
 export interface TenantHistory {
   id: string;
@@ -112,11 +118,12 @@ interface DataContextType {
   rooms: Room[];
   tenants: Tenant[];
   payments: Payment[];
+  tenantHistory: TenantHistory[];
   fetchRooms: () => Promise<void>;
   createTenant: (data: CreateTenantPayload) => Promise<void>;
-  tenantHistory: TenantHistory[];
   fetchPayments: () => Promise<void>;
   fetchTenants: () => Promise<void>;
+  fetchTenantHistory: () => Promise<void>;
   settings: Settings;
   updateSettings: (settings: Partial<Settings>) => void;
   addRoom: (room: Omit<Room, "id">) => void;
@@ -124,11 +131,11 @@ interface DataContextType {
   addTenant: (tenant: Omit<Tenant, "id">) => void;
   updateTenant: (id: string, tenant: Partial<Tenant>) => void;
   removeTenant: (id: string) => void;
-  addPayment: (payment: Omit<Payment, "id">) => void;
+  addPayment: (payment: Omit<Payment, "id">) => Promise<void>;
   updatePayment: (id: string, payment: Partial<Payment>) => void;
   verifyDocument: (tenantId: string, docId: string) => void;
   verifyAllDocuments: (tenantId: string) => void;
-  moveTenantToHistory: (tenantId: string) => void;
+  moveTenantToHistory: (tenantId: string) => Promise<void>;
   getRent: (type: "single" | "double" | "triple", isAC: boolean) => number;
   initializeRooms: (count: number) => Promise<void>;
   deleteAllRooms: () => Promise<void>;
@@ -175,8 +182,8 @@ const mapTenantFromApi = (t: any): Tenant => ({
   
 
   // ✅ FIX HERE
-  roomId: t.room?.room_id ,
-  roomPk: t.room ? String(t.room) : null,
+ roomId: t.room_detail?.room_id || t.room_id || "",
+roomPk: t.room ? String(t.room) : undefined,
 
   documents: [],
   documentsVerified: false,
@@ -189,6 +196,30 @@ const mapTenantFromApi = (t: any): Tenant => ({
   aadhaarNumber: "",
   tokenMoney: 0,
 });
+
+const mapPaymentFromApi = (p: any): Payment => {
+  const dateMonth = p.date_month || "";
+  const [year, month, day] = dateMonth.split("-");
+  const monthName = month ? new Date(dateMonth).toLocaleString("en-IN", { month: "long" }) : "May";
+  
+  return {
+    id: String(p.id),
+    tenant: String(p.tenant),
+    date_month: dateMonth,
+    month: monthName,
+    year: year ? parseInt(year) : 2026,
+    amount: p.total_amount || 0,
+    totalAmount: p.total_amount || 0,
+    units: p.total_units || 0,
+    electricityAmount: (p.total_amount || 0) - (p.room_rent || 0),
+    previous_reading: p.previous_reading || 0,
+    current_reading: p.current_reading || 0,
+    unit_charge: p.unit_charge || 0,
+    status: p.record_status === "Paid" ? "paid" : "pending",
+    reminder_sent: p.reminder_sent || false,
+    remarks: p.remarks || "",
+  };
+};
 
 
 export function DataProvider({ children }: { children: ReactNode }) {
@@ -324,7 +355,7 @@ await fetchRooms();
 
       for (let i = 1; i <= count; i++) {
         const payload = {
-  room_id: `ROOM-${i}`,       // ✅ UNIQUE ID
+  room_id: String(i),         // ✅ UNIQUE ID (1, 2, 3, ...)
   room_type: "Single",        // ✅ MUST match choices
   ac_non_ac: "Non-AC",        // ✅ MUST match choices
   room_rent: 3000,            // ✅ number
@@ -556,21 +587,83 @@ await fetchRooms();
   }, []);
 
   const fetchPayments = useCallback(async () => {
-    try {
-      const res = await api.get("/payments/");
-      setPayments(res.data);
-    } catch (err) {
-      console.warn("fetchPayments: Payments endpoint not available yet", err);
-      setPayments([]);
+  try {
+    const res = await api.get("/electricity-bills/");
+    console.log("PAYMENTS FROM API 👉", res.data);
+    
+    // Handle array or paginated response
+    const paymentsArray = Array.isArray(res.data)
+      ? res.data
+      : res.data?.results || res.data?.data || [];
+    
+    console.log("PAYMENTS ARRAY:", paymentsArray);
+    
+    // Map payments from API format to frontend format
+    const mappedPayments = paymentsArray.map(mapPaymentFromApi);
+    setPayments(mappedPayments);
+  } catch (err) {
+    console.warn("fetchPayments error", err);
+    setPayments([]);
+  }
+}, []);
+
+const fetchTenantHistory = useCallback(async () => {
+  try {
+    // Try to fetch from /tenant-history/
+    const res = await api.get("/tenant-history/");
+    console.log("TENANT HISTORY FROM API 👉", res.data);
+    
+    // Handle array or paginated response
+    const historyArray = Array.isArray(res.data)
+      ? res.data
+      : res.data?.results || res.data?.data || [];
+    
+    console.log("TENANT HISTORY ARRAY:", historyArray);
+    
+    if (historyArray.length === 0) {
+      setTenantHistory([]);
+      return;
     }
-  }, []);
+    
+    // Map the response from /tenant-historys/ endpoint
+    const mappedHistory = historyArray.map((h: any) => {
+      // Backend returns nested tenant and room objects
+      const tenantObj = typeof h.tenant === 'object' ? h.tenant : {};
+      const roomObj = typeof h.room === 'object' ? h.room : {};
+      
+      const tenantFirstName = tenantObj?.first_name || h.tenant_name?.split(' ')[0] || 'Unknown';
+      const tenantLastName = tenantObj?.last_name || h.tenant_name?.split(' ')[1] || '';
+      const roomId = roomObj?.room_id || h.room_detail?.room_id || roomObj?.id || '';
+      const roomType = (roomObj?.room_type || 'single').toLowerCase();
+      
+      return {
+        id: String(h.id),
+        tenantName: `${tenantFirstName} ${tenantLastName}`.trim(),
+        roomId: String(roomId),
+        roomType: roomType.includes("double") ? "double" : roomType.includes("triple") ? "triple" : "single",
+        isAC: (roomObj?.ac_non_ac || 'Non-AC') === 'AC',
+        joinDate: h.join_date || '',
+        leaveDate: h.leave_date || new Date().toISOString(),
+        totalRentPaid: h.total_rent_paid || 0,
+        facilities: h.facilities || [],
+      };
+    });
+    
+    setTenantHistory(mappedHistory);
+  } catch (err: any) {
+    console.warn("fetchTenantHistory error", err);
+    setTenantHistory([]);
+  }
+}, []);
 
   // ✅ FIX 1: Fetch on mount only (empty dependency array)
-  useEffect(() => {
-    fetchRooms();
-    fetchTenants();
-    // fetchPayments(); // ⬅️ Disabled for now (404 error)
-  }, []);
+ useEffect(() => {
+  fetchRooms();
+  fetchTenants();
+  fetchPayments();
+  fetchTenantHistory();
+}, [fetchRooms, fetchTenants, fetchPayments, fetchTenantHistory]);
+
 
   // ✅ FIX 2: Link tenants to rooms - only depend on tenants, not rooms!
   useEffect(() => {
@@ -639,26 +732,52 @@ await fetchRooms();
     }
   };
 
-  const addPayment = (payment: Omit<Payment, "id">) => {
-    const newPayment = { ...payment, id: `payment_${Date.now()}` };
-    setPayments((prev) => [...prev, newPayment]);
-  };
+const addPayment = async (payment: Omit<Payment, "id">) => {
+  try {
+    const res = await api.post("/electricity-bills/", payment);
+    console.log("Payment added:", res.data);
+    
+    // Add to state with ID from response
+    if (res.data && res.data.id) {
+      // Map the response to our Payment format
+      const mappedPayment = mapPaymentFromApi(res.data);
+      setPayments(prev => [...prev, mappedPayment]);
+    } else {
+      // If response doesn't have ID, generate one
+      const newPayment = { ...payment, id: `payment_${Date.now()}` };
+      setPayments(prev => [...prev, newPayment]);
+    }
+    
+    // Refresh payments list to ensure sync
+    await fetchPayments();
+  } catch (err) {
+    console.error("Error adding payment:", err);
+    throw err;
+  }
+};
 
-  const updatePayment = (id: string, updates: Partial<Payment>) => {
-    setPayments((prev) =>
-      prev.map((payment) =>
-        payment.id === id ? { ...payment, ...updates } : payment,
-      ),
-    );
-  };
 
-  const sendPaymentReminder = (paymentId: string) => {
-    setPayments((prev) =>
-      prev.map((payment) =>
-        payment.id === paymentId ? { ...payment, reminderSent: true } : payment,
-      ),
-    );
-  };
+
+  const updatePayment = async (id: string, updates: Partial<Payment>) => {
+  const res = await api.patch(`/electricity-bills/${id}/`, updates);
+
+  setPayments(prev =>
+    prev.map(p => (p.id === id ? res.data : p))
+  );
+};
+
+
+ const sendPaymentReminder = async (paymentId: string) => {
+  await api.patch(`/electricity-bills/${paymentId}/`, {
+    reminder_sent: true,
+  });
+
+  setPayments(prev =>
+    prev.map(p =>
+      p.id === paymentId ? { ...p, reminder_sent: true } : p
+    )
+  );
+};
 
   const verifyDocument = async (tenantId: string, docId: string) => {
     await api.put(`/tenants/${tenantId}/documents/${docId}/verify/`);
@@ -694,45 +813,62 @@ await fetchRooms();
   };
 
 const moveTenantToHistory = async (tenantId: string) => {
-  const tenant = tenants.find((t) => t.id === tenantId);
-  if (!tenant) throw new Error("Tenant not found");
+  try {
+    const tenant = tenants.find((t) => t.id === tenantId);
+    if (!tenant) throw new Error("Tenant not found");
 
-  const room = rooms.find((r) => r.roomId === tenant.roomId);
+    const room = rooms.find((r) => r.id === tenant.roomPk || r.roomId === tenant.roomId);
 
-  // ✅ PATCH (partial update)
-  await api.patch(`/tenants/${tenantId}/`, {
-    is_active: false,
-    room: null,
-  });
-
-  // UI: history add
-  setTenantHistory((prev) => [
-    {
-      id: crypto.randomUUID(),
+    console.log("Moving tenant to history:", {
+      tenantId,
       tenantName: `${tenant.firstName} ${tenant.lastName}`,
-      roomId: tenant.roomId!,
-      roomType: room?.type ?? "single",
-      isAC: room?.isAC ?? false,
-      joinDate: tenant.joinDate,
-      leaveDate: new Date().toISOString(),
-      totalRentPaid: 0,
-      facilities: [],
-    },
-    ...prev,
-  ]);
+      roomId: tenant.roomId,
+      roomPk: tenant.roomPk,
+      roomId_backend: room?.id,
+    });
 
-  // UI: remove tenant
-  setTenants((prev) => prev.filter((t) => t.id !== tenantId));
+    // ✅ 1. PATCH to deactivate tenant
+    await api.patch(`/tenants/${tenantId}/`, {
+      is_active: false,
+    });
 
-  // UI: free room
-  if (room) {
-    setRooms((prev) =>
-      prev.map((r) =>
-        r.roomId === room.roomId
-          ? { ...r, isOccupied: false, tenants: [] }
-          : r
-      )
-    );
+    console.log("Tenant deactivated successfully");
+
+    // ✅ 2. Update room to mark as available (if room exists)
+    if (room && room.id) {
+      try {
+        await api.patch(`/rooms/${room.id}/`, {
+          status: "Available",
+          is_occupied: false,
+        });
+        console.log("Room marked as available");
+      } catch (err: any) {
+        console.warn("Could not update room status:", err?.response?.status, err?.message);
+      }
+    }
+
+    // ✅ 3. Remove from active tenants in frontend
+    setTenants((prev) => prev.filter((t) => t.id !== tenantId));
+
+    // ✅ 4. Refresh tenant history from backend
+    // Backend will automatically include deactivated tenants
+    await fetchTenantHistory();
+
+    // UI: free room
+    if (room) {
+      setRooms((prev) =>
+        prev.map((r) =>
+          r.id === room.id
+            ? { ...r, isOccupied: false, tenants: [] }
+            : r
+        )
+      );
+    }
+
+    console.log("Tenant moved to history successfully");
+  } catch (error: any) {
+    console.error("Error moving tenant to history:", error);
+    throw error;
   }
 };
 
@@ -744,11 +880,12 @@ const moveTenantToHistory = async (tenantId: string) => {
         rooms,
         tenants,
         payments,
+        tenantHistory,
         fetchRooms,
         fetchTenants,
         fetchPayments,
+        fetchTenantHistory,
         createTenant, // ✅ REQUIRED
-        tenantHistory,
         settings,
         updateSettings,
         addRoom,

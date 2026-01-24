@@ -269,20 +269,20 @@ export default function RoomModal({
       // New room - reset all fields
       setRoomType("single");
       setIsAC(false);
-      // 🔥 Safely calculate next room number from roomId like "ROOM-1"
+      // 🔥 Safely calculate next room number (1, 2, 3, ...)
       const maxRoomNumber =
         rooms.length > 0
           ? Math.max(
               ...rooms.map((r) => {
                 if (!r.roomId) return 0;
-                const num = Number(r.roomId.replace("ROOM-", ""));
+                const num = Number(r.roomId);
                 return isNaN(num) ? 0 : num;
               }),
             )
-          : 100;
+          : 0;
 
-      // ✅ Always store as string (roomId is string)
-      setRoomNumber(`ROOM-${maxRoomNumber + 1}`);
+      // ✅ Always store as string (roomId is string like "1", "2", "3")
+      setRoomNumber(String(maxRoomNumber + 1));
 
       // ✅ Reset rest safely
       setCustomRent(getRent("single", false));
@@ -686,104 +686,95 @@ export default function RoomModal({
   //   </div>
   // );
 
+  const renderOccupiedRoomView = () => {
+  if (!room || !room.isOccupied) return null;
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+        <p className="text-sm text-blue-800">
+          ℹ️ This room is currently occupied. Tenant details are shown below.
+        </p>
+      </div>
+
+      {room.tenants.map((tenant, idx) => (
+        <div key={tenant.id} className="bg-muted/50 rounded-xl p-4">
+          <h4 className="font-medium text-foreground mb-3">
+            Tenant {idx + 1}
+          </h4>
+
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <div>
+              <p className="text-muted-foreground">Name</p>
+              <p className="font-medium">
+                {tenant.firstName} {tenant.lastName}
+              </p>
+            </div>
+
+            <div>
+              <p className="text-muted-foreground">Phone</p>
+              <p className="font-medium">{tenant.phone}</p>
+            </div>
+
+            <div>
+              <p className="text-muted-foreground">Email</p>
+              <p className="font-medium">{tenant.email}</p>
+            </div>
+
+            <div>
+              <p className="text-muted-foreground">Joining Date</p>
+              <p className="font-medium">{tenant.joinDate}</p>
+            </div>
+          </div>
+        </div>
+      ))}
+
+      <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+        <p className="text-sm text-amber-800">
+          ⚠️ To add a new tenant, please move the current tenant to history first.
+        </p>
+      </div>
+    </div>
+  );
+};
+
+
   // Step 2: Tenant Details
 
   const renderTenantDetails = () => {
-    // If editing an occupied room, show current tenants info
-    if (room?.isOccupied && room?.tenants.length > 0) {
-      return (
-        <div className="space-y-6">
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <p className="text-sm text-blue-800">
-              ℹ️ This room is currently occupied. Below are the current tenant
-              details:
-            </p>
-          </div>
+  // 🔒 OCCUPIED = VIEW ONLY
+  if (room?.isOccupied) {
+    return renderOccupiedRoomView();
+  }
 
-          {room.tenants.map((tenant, idx) => (
-            <div key={idx} className="bg-muted/50 rounded-xl p-4">
-              <h4 className="font-medium text-foreground mb-3">
-                Tenant {idx + 1}
-              </h4>
-              <div className="grid grid-cols-2 gap-3 text-sm">
-                <div>
-                  <p className="text-muted-foreground">Name:</p>
-                  <p className="font-medium">
-                    {tenant.firstName} {tenant.lastName}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground">Email:</p>
-                  <p className="font-medium">{tenant.email}</p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground">Phone:</p>
-                  <p className="font-medium">{tenant.phone}</p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground">Join Date:</p>
-                  <p className="font-medium">{tenant.joinDate}</p>
-                </div>
-              </div>
-            </div>
-          ))}
+  // ✅ AVAILABLE = FORM
+  return (
+    <div className="space-y-6">
+      <TenantFormFields
+        data={tenant1}
+        updateField={updateTenant1}
+        label="Tenant 1"
+      />
 
-          <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
-            <p className="text-sm text-amber-800">
-              💡 To add a new tenant or modify this room, please use the "Move
-              Tenant to History" option first to free up the room.
-            </p>
-          </div>
-        </div>
-      );
-    }
-
-    // New room or empty room - show form to add tenant
-    return (
-      <div className="space-y-6">
-        {/* Existing Tenant Select */}
-        <div className="space-y-2">
-          <Label>Select Existing Tenant (optional)</Label>
-
-          <Select onValueChange={(v) => setSelectedTenantId(Number(v))}>
-            <SelectTrigger>
-              <SelectValue placeholder="Select tenant" />
-            </SelectTrigger>
-
-            <SelectContent>
-              {tenants.map((t) => (
-                <SelectItem key={t.id} value={String(t.id)}>
-                  {t.firstName} {t.lastName}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
+      {(roomType === "double" || roomType === "triple") && (
         <TenantFormFields
-          data={tenant1}
-          updateField={updateTenant1}
-          label="Tenant 1"
+          data={tenant2}
+          updateField={updateTenant2}
+          label="Tenant 2"
         />
+      )}
 
-        {(roomType === "double" || roomType === "triple") && (
-          <TenantFormFields
-            data={tenant2}
-            updateField={updateTenant2}
-            label="Tenant 2"
-          />
-        )}
+      {roomType === "triple" && (
+        <TenantFormFields
+          data={tenant3}
+          updateField={updateTenant3}
+          label="Tenant 3"
+        />
+      )}
+    </div>
+  );
+};
 
-        {roomType === "triple" && (
-          <TenantFormFields
-            data={tenant3}
-            updateField={updateTenant3}
-            label="Tenant 3"
-          />
-        )}
-      </div>
-    );
-  };
 
   // Step 3: Documents
   const renderDocuments = () => (
@@ -1017,12 +1008,13 @@ export default function RoomModal({
             </Button>
           ) : (
             <Button
-              onClick={handleSave}
-              className="gradient-primary w-full sm:w-auto"
-            >
-              <Check className="h-4 w-4 mr-1" />
-              Save Tenant
-            </Button>
+  onClick={handleSave}
+  disabled={room?.isOccupied}
+  className="gradient-primary w-full sm:w-auto"
+>
+  <Check className="h-4 w-4 mr-1" />
+  Save Tenant
+</Button>
           )}
         </div>
       </DialogContent>

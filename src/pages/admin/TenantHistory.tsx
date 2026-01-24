@@ -11,7 +11,7 @@ import { formatCurrency, formatDate } from '@/utils/formatters';
 import { downloadTenantPDF } from '@/utils/tenantPdfGenerator';
 
 export default function AdminTenantHistory() {
-  const { tenantHistory, tenants, rooms, moveTenantToHistory } = useData();
+  const { tenantHistory, tenants, rooms, moveTenantToHistory, fetchRooms, fetchTenantHistory } = useData();
   const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState('');
   const [isMovingTenant, setIsMovingTenant] = useState(false);
@@ -21,9 +21,7 @@ export default function AdminTenantHistory() {
 
   const getRoomNumber = (roomId?: string | number) => {
   if (!roomId) return "—";
-
-  const room = rooms.find(r => String(r.id) === String(roomId) || String(r.roomId) === String(roomId));
-  return room?.roomId ?? "—";
+  return String(roomId); // ✅ Direct room number (1, 2, 3, ...)
 };
 
   const filteredHistory = tenantHistory.filter(entry =>
@@ -42,10 +40,16 @@ export default function AdminTenantHistory() {
 
   try {
     await moveTenantToHistory(selectedTenant.id);
+    
+    // Refresh rooms to update their occupied status
+    await fetchRooms();
+    
+    // Refresh tenant history to get latest data from backend
+    await fetchTenantHistory();
 
     toast({
       title: '✅ Tenant Moved',
-      description: `${selectedTenant.firstName} moved to history successfully.`,
+      description: `${selectedTenant.firstName} moved to history successfully. Room is now available.`,
     });
 
     setIsMovingTenant(false);
