@@ -6,13 +6,14 @@ import React, {
   ReactNode,
 } from "react";
 import api from "@/api/api";
+import { useData } from "./DataContext";
 
 export type UserRole = "admin" | "tenant";
 
 export interface User {
   email: string;
   role: UserRole;
-  tenantId?: number; // ✅ tenant ke liye
+  tenantId?: number;
 }
 
 interface AuthContextType {
@@ -29,114 +30,88 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isInitialized, setIsInitialized] = useState(false);
 
-  /* ===================== RESTORE USER ON REFRESH ===================== */
+  const { tenants } = useData();
+
+  /* ================= RESTORE USER ================= */
   useEffect(() => {
     const savedUser = localStorage.getItem("rentease_user");
     const token = localStorage.getItem("ACCESS_TOKEN");
 
     if (savedUser && token) {
-      try {
-        setUser(JSON.parse(savedUser));
-        console.log("✅ User restored from localStorage");
-      } catch {
-        localStorage.removeItem("rentease_user");
-        localStorage.removeItem("ACCESS_TOKEN");
-      }
+      setUser(JSON.parse(savedUser));
     }
 
     setIsInitialized(true);
   }, []);
 
-  /* ===================== LOGIN ===================== */
-  const login = async (
-    identifier: string,
-    password: string
-  ): Promise<boolean> => {
-    try {
-      // clear old data
-      localStorage.removeItem("ACCESS_TOKEN");
-      localStorage.removeItem("REFRESH_TOKEN");
-
-      /* ================= ADMIN LOGIN (BACKEND) ================= */
-      if (identifier.toLowerCase() === "admin" || identifier === "admin@pg.com" || identifier === "albenuspeter") {
-        try {
-          console.log("🔐 Attempting admin login with:", identifier);
-          const res = await api.post("/login/", {
-            username: identifier,
-            password,
-          });
-
-          if (!res.data?.access) {
-            console.error("❌ No access token in response");
-            return false;
-          }
-
-          localStorage.setItem("ACCESS_TOKEN", res.data.access);
-          if (res.data.refresh) {
-            localStorage.setItem("REFRESH_TOKEN", res.data.refresh);
-          }
-
-          const adminUser: User = {
-            email: identifier,
-            role: "admin",
-          };
-
-          localStorage.setItem("rentease_user", JSON.stringify(adminUser));
-          setUser(adminUser);
-          console.log("✅ Admin login successful");
-          return true;
-        } catch (error) {
-          console.error("❌ Admin login API error:", error);
-          return false;
-        }
-      }
-
-      /* ================= TENANT LOGIN ================= */
-      try {
-        console.log("🔐 Attempting tenant login with:", identifier);
-        
-        // For tenants, accept both email and username formats
-        if (!identifier || identifier.trim() === "") {
-          console.warn("❌ Username/Email cannot be empty");
-          return false;
-        }
-
-        const tenantUser: User = {
-          email: identifier,
-          role: "tenant",
-          tenantId: 0, // Will be fetched later if needed
-        };
-
-        // Set fake token for frontend routing
-        localStorage.setItem("ACCESS_TOKEN", "TENANT_LOGIN");
-        localStorage.setItem(
-          "rentease_user",
-          JSON.stringify(tenantUser)
-        );
-
-        setUser(tenantUser);
-        console.log("✅ Tenant login successful:", tenantUser);
-        return true;
-      } catch (error: any) {
-        console.error("❌ Tenant login error:", error);
-        return false;
-      }
-    } catch (err) {
-      console.error("❌ Login failed:", err);
-      return false;
-    }
-  };
-
-  /* ===================== LOGOUT ===================== */
-  const logout = () => {
-    setUser(null);
+  /* ================= LOGIN ================= */
+  const login = async (identifier: string, password: string): Promise<boolean> => {
     localStorage.removeItem("ACCESS_TOKEN");
     localStorage.removeItem("REFRESH_TOKEN");
-    localStorage.removeItem("rentease_user");
+
+    /* ===== ADMIN LOGIN ===== */
+    if (
+      identifier === "admin" ||
+      identifier === "admin@pg.com" ||
+      identifier === "albenuspeter"
+    ) {
+      try {
+        const res = await api.post("/login/", {
+          username: identifier,
+          password,
+        });
+
+        if (!res.data?.access) return false;
+
+        localStorage.setItem("ACCESS_TOKEN", res.data.access);
+
+        const adminUser: User = {
+          email: identifier,
+          role: "admin",
+        };
+
+        localStorage.setItem("rentease_user", JSON.stringify(adminUser));
+        setUser(adminUser);
+        return true;
+      } catch {
+        return false;
+      }
+    }
+
+    /* ===== TENANT LOGIN ===== */
+    const COMMON_TENANT_PASSWORD = "tenant123";
+
+    const tenant = tenants.find(
+      (t) => t.email === identifier && password === COMMON_TENANT_PASSWORD
+    );
+
+    if (!tenant) return false;
+
+    // Use tenant ID as a simple token (tenants are not Django users)
+    // Backend should validate tenant existence via tenant ID
+    const tenantToken = `TENANT_${tenant.id}_${Date.now()}`;
+    localStorage.setItem("ACCESS_TOKEN", tenantToken);
+    localStorage.setItem("TENANT_ID", tenant.id);
+
+    const tenantUser: User = {
+      email: tenant.email,
+      role: "tenant",
+      tenantId: Number(tenant.id),
+    };
+
+    localStorage.setItem("rentease_user", JSON.stringify(tenantUser));
+    setUser(tenantUser);
+
+    return true;
   };
 
-  const isAuthenticated =
-    !!user && !!localStorage.getItem("ACCESS_TOKEN");
+  /* ================= LOGOUT ================= */
+  const logout = () => {
+    setUser(null);
+    localStorage.clear();
+  };
+
+  const isAuthenticated = !!user && !!localStorage.getItem("ACCESS_TOKEN");
 
   return (
     <AuthContext.Provider
@@ -153,7 +128,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 }
 
-/* ===================== HOOK ===================== */
+/* ================= HOOK ================= */
 export function useAuth() {
   const context = useContext(AuthContext);
   if (!context) {

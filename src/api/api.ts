@@ -11,14 +11,22 @@ const api = axios.create({
 /* ===================== REQUEST ===================== */
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem("ACCESS_TOKEN");
+  const tenantId = localStorage.getItem("TENANT_ID");
   const url = config.url || "";
 
   const isAuthEndpoint =
     url.includes("/login/") || url.includes("/token/");
 
   if (token && !isAuthEndpoint) {
-    // ✅ TS-safe (Axios v1)
-    config.headers!.Authorization = `Bearer ${token}`;
+    // Check if it's a tenant token
+    if (token.startsWith("TENANT_")) {
+      // For tenant requests, include tenant ID in headers
+      config.headers!["X-Tenant-ID"] = tenantId || "";
+      config.headers!.Authorization = `Bearer ${token}`;
+    } else {
+      // For admin JWT tokens
+      config.headers!.Authorization = `Bearer ${token}`;
+    }
   }
 
   return config;

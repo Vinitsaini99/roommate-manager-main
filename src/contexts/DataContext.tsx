@@ -8,6 +8,7 @@ import React, {
 } from "react";
 import api from "@/api/api";
 
+
 export interface Tenant {
   id: string;
   firstName: string;
@@ -91,11 +92,16 @@ export interface Payment {
 export interface TenantHistory {
   id: string;
   tenantName: string;
+  tenantId: string; // 👈 reference to original tenant
+  email: string;
+  phone: string;
   roomId: string; // 👈 instead of roomNumber
   roomType: "single" | "double" | "triple";
   isAC: boolean;
   joinDate: string;
   leaveDate: string;
+  checkoutDate: string; // 👈 When they actually left
+  reason: string; // 👈 e.g., "Room vacated", "Lease ended", etc.
   totalRentPaid: number;
   facilities: string[];
 }
@@ -130,12 +136,12 @@ interface DataContextType {
   updateRoom: (id: string, room: Partial<Room>) => void;
   addTenant: (tenant: Omit<Tenant, "id">) => void;
   updateTenant: (id: string, tenant: Partial<Tenant>) => void;
-  removeTenant: (id: string) => void;
+  removeTenant: (id: string, reason?: string) => Promise<void>;
   addPayment: (payment: Omit<Payment, "id">) => Promise<void>;
   updatePayment: (id: string, payment: Partial<Payment>) => void;
   verifyDocument: (tenantId: string, docId: string) => void;
   verifyAllDocuments: (tenantId: string) => void;
-  moveTenantToHistory: (tenantId: string) => Promise<void>;
+  moveTenantToHistory: (tenantId: string, reason?: string) => Promise<void>;
   getRent: (type: "single" | "double" | "triple", isAC: boolean) => number;
   initializeRooms: (count: number) => Promise<void>;
   deleteAllRooms: () => Promise<void>;
@@ -714,19 +720,33 @@ const fetchTenantHistory = useCallback(async () => {
     );
   };
 
-  const removeTenant = (id: string) => {
+  const removeTenant = async (id: string, reason?: string) => {
     const tenant = tenants.find((t) => t.id === id);
-    if (tenant) {
-      setTenants((prev) => prev.filter((t) => t.id !== id));
+    if (!tenant) return;
+
+    const room = rooms.find((r) => r.id === tenant.roomPk || r.roomId === tenant.roomId);
+    
+    // ✅ If room is occupied, move to history instead of deleting
+    if (room && room.isOccupied) {
+      console.log("🔄 Room is occupied, moving tenant to history instead of deleting");
+      await moveTenantToHistory(id, reason || "Room vacated");
+      return;
+    }
+
+    // ❌ If room is not occupied, directly delete tenant
+    console.log("🗑️ Deleting tenant from empty room");
+    setTenants((prev) => prev.filter((t) => t.id !== id));
+    
+    if (room) {
       setRooms((prev) =>
-        prev.map((room) =>
-          room.roomId === tenant.roomId
+        prev.map((r) =>
+          r.id === room.id
             ? {
-                ...room,
-                isOccupied: room.tenants.length > 1,
-                tenants: room.tenants.filter((t) => t.id !== id),
+                ...r,
+                isOccupied: r.tenants.length > 1,
+                tenants: r.tenants.filter((t) => t.id !== id),
               }
-            : room,
+            : r,
         ),
       );
     }
@@ -812,27 +832,34 @@ const addPayment = async (payment: Omit<Payment, "id">) => {
     );
   };
 
-const moveTenantToHistory = async (tenantId: string) => {
+const moveTenantToHistory = async (tenantId: string, reason: string = "Room vacated") => {
   try {
     const tenant = tenants.find((t) => t.id === tenantId);
     if (!tenant) throw new Error("Tenant not found");
 
     const room = rooms.find((r) => r.id === tenant.roomPk || r.roomId === tenant.roomId);
 
-    console.log("Moving tenant to history:", {
+    console.log("🔄 Moving tenant to history:", {
       tenantId,
       tenantName: `${tenant.firstName} ${tenant.lastName}`,
       roomId: tenant.roomId,
-      roomPk: tenant.roomPk,
-      roomId_backend: room?.id,
+      reason,
     });
 
-    // ✅ 1. PATCH to deactivate tenant
-    await api.patch(`/tenants/${tenantId}/`, {
+    // ✅ 1. Move tenant to history via backend
+    const todayDate = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+    
+    const historyPayload = {
+      tenant_id: tenantId,
+      checkout_date: todayDate,
+      reason: reason,
       is_active: false,
-    });
+    };
 
-    console.log("Tenant deactivated successfully");
+    // POST to move-to-history endpoint
+    await api.post(`/tenants/${tenantId}/move-to-history/`, historyPayload);
+
+    console.log("✅ Tenant moved to history in backend");
 
     // ✅ 2. Update room to mark as available (if room exists)
     if (room && room.id) {
@@ -841,9 +868,9 @@ const moveTenantToHistory = async (tenantId: string) => {
           status: "Available",
           is_occupied: false,
         });
-        console.log("Room marked as available");
+        console.log("✅ Room marked as available");
       } catch (err: any) {
-        console.warn("Could not update room status:", err?.response?.status, err?.message);
+        console.warn("⚠️ Could not update room status:", err?.response?.status, err?.message);
       }
     }
 
@@ -851,10 +878,9 @@ const moveTenantToHistory = async (tenantId: string) => {
     setTenants((prev) => prev.filter((t) => t.id !== tenantId));
 
     // ✅ 4. Refresh tenant history from backend
-    // Backend will automatically include deactivated tenants
     await fetchTenantHistory();
 
-    // UI: free room
+    // ✅ 5. Free room in frontend
     if (room) {
       setRooms((prev) =>
         prev.map((r) =>
@@ -865,9 +891,9 @@ const moveTenantToHistory = async (tenantId: string) => {
       );
     }
 
-    console.log("Tenant moved to history successfully");
+    console.log("✅ Tenant moved to history successfully");
   } catch (error: any) {
-    console.error("Error moving tenant to history:", error);
+    console.error("❌ Error moving tenant to history:", error);
     throw error;
   }
 };

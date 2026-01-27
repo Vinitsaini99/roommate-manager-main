@@ -1,15 +1,15 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Building2, Mail, Lock, ArrowRight, Eye, EyeOff } from 'lucide-react';
-import { useAuth } from '@/contexts/AuthContext';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { useToast } from '@/hooks/use-toast';
+import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { Building2, Mail, Lock, ArrowRight, Eye, EyeOff } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { useToast } from "@/hooks/use-toast";
 
 export default function Login() {
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const { login } = useAuth();
@@ -23,50 +23,49 @@ export default function Login() {
     try {
       console.log("🔐 Login attempt with:", { username, password });
       const success = await login(username, password);
-      
+
       if (success) {
-        const user = JSON.parse(localStorage.getItem('rentease_user') || '{}');
+        const user = JSON.parse(localStorage.getItem("rentease_user") || "{}");
         console.log("✅ Login successful, user role:", user.role);
-        
-        if (user.role === 'admin') {
-          navigate('/admin');
+
+        if (user.role === "admin") {
+          navigate("/admin");
         } else {
-          navigate('/tenant');
+          navigate("/tenant");
         }
         toast({
-          title: 'स्वागत है! (Welcome!)',
-          description: 'You have successfully logged in.',
+          title: "स्वागत है! (Welcome!)",
+          description: "You have successfully logged in.",
         });
       } else {
         console.log("❌ Login failed");
         toast({
-          title: 'Login failed',
-          description: 'Invalid username or password.',
-          variant: 'destructive',
+          title: "Login failed",
+          description: "Invalid username or password.",
+          variant: "destructive",
         });
       }
     } catch (error) {
       console.error("❌ Login error:", error);
       toast({
-        title: 'Error',
-        description: 'Something went wrong. Please try again.',
-        variant: 'destructive',
+        title: "Error",
+        description: "Something went wrong. Please try again.",
+        variant: "destructive",
       });
     } finally {
       setIsLoading(false);
     }
   };
 
-  const fillDemoCredentials = (role: 'admin' | 'tenant') => {
-    if (role === 'admin') {
-      setUsername('Admin');
-      setPassword('12345678');
+  const fillDemoCredentials = (role: "admin" | "tenant") => {
+    if (role === "admin") {
+      setUsername("albenuspeter");
+      setPassword("peter123");
     } else {
-      setUsername('tenant@example.com');
-      setPassword('password123');
+      setUsername("tenant@example.com");
+      setPassword("password123");
     }
   };
-
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-muted/30 p-4">
@@ -111,13 +110,14 @@ export default function Login() {
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
                   id="password"
-                  type={showPassword ? 'text' : ' password'}
+                  type={showPassword ? "text" : "password"} // ✅ correct
                   placeholder="••••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="pl-9 pr-9"
                   required
                 />
+
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
@@ -132,8 +132,8 @@ export default function Login() {
               </div>
             </div>
 
-            <Button 
-              type="submit" 
+            <Button
+              type="submit"
               className="w-full gradient-primary"
               disabled={isLoading}
             >
@@ -162,7 +162,7 @@ export default function Login() {
                 variant="outline"
                 size="sm"
                 className="flex-1 text-xs"
-                onClick={() => fillDemoCredentials('admin')}
+                onClick={() => fillDemoCredentials("admin")}
               >
                 Admin Login
               </Button>
@@ -171,7 +171,7 @@ export default function Login() {
                 variant="outline"
                 size="sm"
                 className="flex-1 text-xs"
-                onClick={() => fillDemoCredentials('tenant')}
+                onClick={() => fillDemoCredentials("tenant")}
               >
                 Tenant Login
               </Button>

@@ -13,6 +13,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogTrigger,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -101,6 +102,10 @@ export default function RoomModal({
   // const { addTenant, updateRoom, addRoom, rooms, getRent, settings } =useData();
   const { toast } = useToast();
 
+  // Remove tenant state
+  const [removingTenantId, setRemovingTenantId] = useState<string | null>(null);
+  const [removeReason, setRemoveReason] = useState("Room vacated");
+
   // Wizard state
   const [currentStep, setCurrentStep] = useState(1);
 
@@ -112,7 +117,7 @@ export default function RoomModal({
   const [customRent, setCustomRent] = useState<number>(0);
   const [roomNumber, setRoomNumber] = useState<string>("");
 
-  const { tenants, createTenant, rooms, getRent, settings } = useData();
+  const { tenants, createTenant, rooms, getRent, settings, removeTenant } = useData();
   // Tenant details state - using refs to track initialization
   const [formInitialized, setFormInitialized] = useState(false);
   const [tenant1, setTenant1] = useState(createEmptyTenant());
@@ -411,6 +416,32 @@ export default function RoomModal({
     }
   };
 
+  // ✅ Handle tenant removal - move to history
+  const handleRemoveTenant = async (tenantId: string) => {
+    if (!tenantId) return;
+
+    setRemovingTenantId(tenantId);
+
+    try {
+      await removeTenant(tenantId, removeReason);
+      toast({
+        title: "✅ Tenant removed",
+        description: `Tenant moved to history. Room is now available.`,
+      });
+      setRemovingTenantId(null);
+      setRemoveReason("Room vacated");
+      onClose();
+    } catch (error: any) {
+      console.error("❌ Error removing tenant:", error);
+      toast({
+        title: "Error",
+        description: error?.message || "Failed to remove tenant. Please try again.",
+        variant: "destructive",
+      });
+      setRemovingTenantId(null);
+    }
+  };
+
   // Memoized tenant form update handlers to prevent unnecessary re-renders
   const updateTenant1 = useCallback(
     (field: keyof TenantFormData, value: string | number) => {
@@ -699,9 +730,65 @@ export default function RoomModal({
 
       {room.tenants.map((tenant, idx) => (
         <div key={tenant.id} className="bg-muted/50 rounded-xl p-4">
-          <h4 className="font-medium text-foreground mb-3">
-            Tenant {idx + 1}
-          </h4>
+          <div className="flex justify-between items-start mb-3">
+            <h4 className="font-medium text-foreground">
+              Tenant {idx + 1}
+            </h4>
+            
+            {/* ✅ REMOVE TENANT BUTTON */}
+            <Dialog>
+              <DialogTrigger asChild>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  disabled={removingTenantId === tenant.id}
+                >
+                  {removingTenantId === tenant.id ? "Removing..." : "Remove"}
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Remove Tenant from History?</DialogTitle>
+                </DialogHeader>
+                
+                <div className="space-y-4 py-4">
+                  <p className="text-sm text-muted-foreground">
+                    Are you sure you want to remove <strong>{tenant.firstName} {tenant.lastName}</strong> from this room?
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    The tenant will be moved to <strong>Tenant History</strong> and the room will become available.
+                  </p>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="reason">Reason for removal</Label>
+                    <Select value={removeReason} onValueChange={setRemoveReason}>
+                      <SelectTrigger id="reason">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Room vacated">Room vacated</SelectItem>
+                        <SelectItem value="Lease ended">Lease ended</SelectItem>
+                        <SelectItem value="Non-payment">Non-payment</SelectItem>
+                        <SelectItem value="Tenant request">Tenant request</SelectItem>
+                        <SelectItem value="Other">Other</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div className="flex gap-3 justify-end">
+                  <Button variant="outline">Cancel</Button>
+                  <Button
+                    variant="destructive"
+                    onClick={() => handleRemoveTenant(tenant.id)}
+                    disabled={removingTenantId === tenant.id}
+                  >
+                    {removingTenantId === tenant.id ? "Removing..." : "Remove Tenant"}
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
+          </div>
 
           <div className="grid grid-cols-2 gap-3 text-sm">
             <div>
@@ -731,7 +818,7 @@ export default function RoomModal({
 
       <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
         <p className="text-sm text-amber-800">
-          ⚠️ To add a new tenant, please move the current tenant to history first.
+          ⚠️ To add a new tenant, please remove the current tenant first.
         </p>
       </div>
     </div>
