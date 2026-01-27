@@ -10,8 +10,8 @@ export default function TenantPayments() {
   const { user } = useAuth();
   const { tenants, payments, settings } = useData();
 
-  const tenant = tenants.find(t => t.email === user?.email || t.roomNumber === user?.roomNumber);
-  const tenantPayments = payments.filter(p => p.tenantId === tenant?.id);
+  const tenant = tenants.find(t => t.email === user?.email);
+  const tenantPayments = payments.filter(p => p.tenant === tenant?.id);
 
   const paidPayments = tenantPayments.filter(p => p.status === 'paid');
   const pendingPayments = tenantPayments.filter(p => p.status === 'pending');
@@ -117,7 +117,7 @@ export default function TenantPayments() {
                         {payment.month} {payment.year}
                       </h3>
                       <p className="text-xs md:text-sm text-muted-foreground">
-                        Room #{payment.roomNumber}
+                        Room #{tenant?.roomId}
                       </p>
                     </div>
                     <span className={cn(
@@ -138,11 +138,11 @@ export default function TenantPayments() {
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mt-3 md:mt-4 pt-3 md:pt-4 border-t border-border/50">
                   <div>
                     <p className="text-xs text-muted-foreground">Rent</p>
-                    <p className="font-medium text-foreground text-sm">{formatCurrency(payment.rent)}</p>
+                    <p className="font-medium text-foreground text-sm">{formatCurrency(payment.amount)}</p>
                   </div>
                   <div>
                     <p className="text-xs text-muted-foreground">Units Used</p>
-                    <p className="font-medium text-foreground text-sm">{payment.unitsUsed} units</p>
+                    <p className="font-medium text-foreground text-sm">{payment.units} units</p>
                   </div>
                   <div>
                     <p className="text-xs text-muted-foreground">Electricity</p>
@@ -150,7 +150,7 @@ export default function TenantPayments() {
                   </div>
                   <div>
                     <p className="text-xs text-muted-foreground">Rate</p>
-                    <p className="font-medium text-foreground text-sm">₹{payment.electricityRate}/unit</p>
+                    <p className="font-medium text-foreground text-sm">₹{payment.unit_charge}/unit</p>
                   </div>
                 </div>
               </div>

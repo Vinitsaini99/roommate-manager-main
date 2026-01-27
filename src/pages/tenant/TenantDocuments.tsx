@@ -10,7 +10,7 @@ export default function TenantDocuments() {
   const { user } = useAuth();
   const { tenants } = useData();
 
-  const tenant = tenants.find(t => t.email === user?.email || t.roomNumber === user?.roomNumber);
+  const tenant = tenants.find(t => t.email === user?.email);
 
   if (!tenant) {
     return (

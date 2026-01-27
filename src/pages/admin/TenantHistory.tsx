@@ -9,6 +9,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/hooks/use-toast';
 import { formatCurrency, formatDate } from '@/utils/formatters';
 import { downloadTenantPDF } from '@/utils/tenantPdfGenerator';
+import api from '@/api/api';
+
 
 export default function AdminTenantHistory() {
   const { tenantHistory, tenants, rooms, moveTenantToHistory, fetchRooms, fetchTenantHistory } = useData();
@@ -29,39 +31,34 @@ export default function AdminTenantHistory() {
   );
 
   const handleMoveTenant = async () => {
-  if (!selectedTenant) {
-    toast({
-      title: 'Error',
-      description: 'Please select a valid tenant',
-      variant: 'destructive',
-    });
-    return;
-  }
+  if (!selectedTenantId) return;
 
   try {
-    await moveTenantToHistory(selectedTenant.id);
-    
-    // Refresh rooms to update their occupied status
+    await api.post(`/tenant-history/${selectedTenantId}/move/`);
+
+
+console.log("Calling:", `/api/tenants/${selectedTenantId}/move_to_history/`);
+
+
     await fetchRooms();
-    
-    // Refresh tenant history to get latest data from backend
     await fetchTenantHistory();
 
     toast({
-      title: '✅ Tenant Moved',
-      description: `${selectedTenant.firstName} moved to history successfully. Room is now available.`,
+      title: "✅ Tenant moved",
+      description: "Room is now available",
     });
 
     setIsMovingTenant(false);
-    setSelectedTenantId('');
-  } catch (error) {
+    setSelectedTenantId("");
+  } catch (err) {
     toast({
-      title: '❌ Error',
-      description: 'Failed to move tenant to history',
-      variant: 'destructive',
+      title: "❌ Error",
+      description: "Failed to move tenant",
+      variant: "destructive",
     });
   }
 };
+
   const selectedTenant = tenants.find(t => t.id === selectedTenantId);
   const selectedRoom = rooms.find(r => r.roomId === selectedTenant?.roomId);
 

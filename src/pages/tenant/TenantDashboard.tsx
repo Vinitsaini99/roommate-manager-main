@@ -10,10 +10,17 @@ export default function TenantDashboard() {
   const { user } = useAuth();
   const { tenants, rooms, payments } = useData();
 
-  const tenant = tenants.find(t => t.email === user?.email || t.roomNumber === user?.roomNumber);
-  const room = rooms.find(r => r.roomNumber === tenant?.roomNumber);
+  // 🔑 Correct tenant lookup
+ const tenant = user?.tenantId
+  ? tenants.find(t => t.id === String(user.tenantId))
+  : null;
 
-  const tenantPayments = payments.filter(p => p.tenantId === tenant?.id);
+const room = tenant
+  ? rooms.find(r => r.id === tenant.roomId)
+  : null;
+;
+
+  const tenantPayments = payments.filter(p => p.tenant === tenant?.id);
   const paidPayments = tenantPayments.filter(p => p.status === 'paid');
   const pendingPayments = tenantPayments.filter(p => p.status === 'pending');
 
@@ -23,11 +30,10 @@ export default function TenantDashboard() {
   if (!tenant || !room) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] text-center">
-        <div className="h-16 w-16 rounded-full bg-muted flex items-center justify-center mb-4">
-          <User className="h-8 w-8 text-muted-foreground" />
-        </div>
         <p className="font-medium text-foreground">Tenant data not found</p>
-        <p className="text-sm text-muted-foreground mt-1">Please contact admin for assistance</p>
+        <p className="text-sm text-muted-foreground mt-1">
+          Please contact admin for assistance
+        </p>
       </div>
     );
   }
@@ -52,7 +58,7 @@ export default function TenantDashboard() {
               <h2 className="text-lg md:text-xl font-bold text-foreground truncate">
                 {tenant.firstName} {tenant.lastName}
               </h2>
-              <p className="text-muted-foreground text-sm">Room #{tenant.roomNumber}</p>
+              <p className="text-muted-foreground text-sm">Room #{tenant.roomId}</p>
               <div className="flex gap-2 mt-2">
                 <Badge variant={tenant.documentsVerified ? 'default' : 'secondary'} className="text-xs">
                   {tenant.documentsVerified ? 'Verified' : 'Pending Verification'}
@@ -147,7 +153,7 @@ export default function TenantDashboard() {
           <div className="space-y-3 md:space-y-4">
             <div className="flex items-center justify-between p-3 md:p-4 bg-muted/50 rounded-xl">
               <span className="text-muted-foreground text-sm">Room Number</span>
-              <span className="font-semibold text-foreground">#{room.roomNumber}</span>
+              <span className="font-semibold text-foreground">#{room.roomId}</span>
             </div>
             <div className="flex items-center justify-between p-3 md:p-4 bg-muted/50 rounded-xl">
               <span className="text-muted-foreground text-sm">Room Type</span>
@@ -222,7 +228,7 @@ export default function TenantDashboard() {
                   {tenantPayments.slice(0, 5).map((payment) => (
                     <tr key={payment.id}>
                       <td className="font-medium text-sm">{payment.month} {payment.year}</td>
-                      <td className="text-sm">{formatCurrency(payment.rent)}</td>
+                      <td className="text-sm">{formatCurrency(payment.totalAmount)}</td>
                       <td className="text-sm">{formatCurrency(payment.electricityAmount)}</td>
                       <td className="font-semibold text-primary text-sm">{formatCurrency(payment.totalAmount)}</td>
                       <td>

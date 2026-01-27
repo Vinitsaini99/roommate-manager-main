@@ -12,6 +12,7 @@ export type UserRole = "admin" | "tenant";
 export interface User {
   email: string;
   role: UserRole;
+  tenantId?: number;
 }
 
 interface AuthContextType {
@@ -28,7 +29,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isInitialized, setIsInitialized] = useState(false);
 
-  /* ===================== RESTORE USER ON REFRESH ===================== */
+  /* 🔁 RESTORE ON REFRESH */
   useEffect(() => {
     const savedUser = localStorage.getItem("rentease_user");
     const token = localStorage.getItem("ACCESS_TOKEN");
@@ -36,77 +37,75 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (savedUser && token) {
       try {
         setUser(JSON.parse(savedUser));
-        console.log("✅ User restored from localStorage");
-      } catch (e) {
-        console.error("Failed to parse saved user:", e);
+      } catch {
         localStorage.removeItem("rentease_user");
       }
-    } else {
-      console.warn("No saved user or token found");
     }
-    
     setIsInitialized(true);
   }, []);
 
-  /* ===================== LOGIN ===================== */
+  /* 🔐 LOGIN */
   const login = async (
     identifier: string,
     password: string
   ): Promise<boolean> => {
     try {
-      // 🔹 clear old tokens
       localStorage.removeItem("ACCESS_TOKEN");
       localStorage.removeItem("REFRESH_TOKEN");
 
-      // 🔹 standard Django / SimpleJWT login
-      const response = await api.post("/login/", {
-        username: identifier,
-        password,
-      });
+      /* ✅ ADMIN LOGIN (BACKEND) */
+      if (identifier === "admin@pg.com") {
+        const res = await api.post("/login/", {
+          username: identifier,
+          password,
+        });
 
-      // 🔴 token mandatory
-      if (!response.data?.access) {
-        console.error("❌ Access token missing:", response.data);
-        return false;
+        if (!res.data?.access) return false;
+
+        localStorage.setItem("ACCESS_TOKEN", res.data.access);
+        localStorage.setItem("REFRESH_TOKEN", res.data.refresh);
+
+        const adminUser: User = {
+          email: identifier,
+          role: "admin",
+        };
+
+        localStorage.setItem("rentease_user", JSON.stringify(adminUser));
+        setUser(adminUser);
+        return true;
       }
 
-      // 🔹 save tokens
-      localStorage.setItem("ACCESS_TOKEN", response.data.access);
-      if (response.data.refresh) {
-        localStorage.setItem("REFRESH_TOKEN", response.data.refresh);
+      /* ✅ TENANT LOGIN (FRONTEND ONLY) */
+      if (password === "newuser123") {
+        const res = await api.get("/tenants/");
+        const tenant = res.data.find(
+          (t: any) => t.email === identifier
+        );
+
+        if (!tenant) return false;
+
+        const tenantUser: User = {
+          email: tenant.email,
+          role: "tenant",
+          tenantId: Number(tenant.id),
+        };
+
+        localStorage.setItem("ACCESS_TOKEN", "TENANT_LOGIN");
+        localStorage.setItem("rentease_user", JSON.stringify(tenantUser));
+        setUser(tenantUser);
+        return true;
       }
 
-      // 🔹 build user object
-      const loggedInUser: User = {
-        email: response.data.email || identifier,
-        role: (response.data.role || "admin") as UserRole,
-      };
-
-      // 🔹 save user
-      localStorage.setItem(
-        "rentease_user",
-        JSON.stringify(loggedInUser)
-      );
-      setUser(loggedInUser);
-
-      console.log("✅ Login successful:", loggedInUser);
-      return true;
-    } catch (error: any) {
-      console.error("❌ Login failed:", error?.response?.data || error);
+      return false;
+    } catch {
       return false;
     }
   };
 
-  /* ===================== LOGOUT ===================== */
   const logout = () => {
     setUser(null);
-    localStorage.removeItem("ACCESS_TOKEN");
-    localStorage.removeItem("REFRESH_TOKEN");
-    localStorage.removeItem("rentease_user");
+    localStorage.clear();
   };
-
-  const isAuthenticated =
-    !!user && !!localStorage.getItem("ACCESS_TOKEN");
 
   return (
     <AuthContext.Provider
@@ -114,7 +113,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         user,
         login,
         logout,
-        isAuthenticated,
+        isAuthenticated: !!user && !!localStorage.getItem("ACCESS_TOKEN"),
         isInitialized,
       }}
     >
@@ -123,11 +122,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 }
 
-/* ===================== HOOK ===================== */
 export function useAuth() {
-  const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error("useAuth must be used within AuthProvider");
-  }
-  return context;
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error("useAuth outside provider");
+  return ctx;
 }
