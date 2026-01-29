@@ -72,6 +72,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         localStorage.setItem("rentease_user", JSON.stringify(adminUser));
         setUser(adminUser);
+        // 🔔 Let DataContext know token is ready (same-tab)
+        window.dispatchEvent(new Event("rentease:auth-changed"));
         return true;
       } catch {
         return false;
@@ -101,6 +103,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     localStorage.setItem("rentease_user", JSON.stringify(tenantUser));
     setUser(tenantUser);
+    // 🔔 Let DataContext know token is ready (same-tab)
+    window.dispatchEvent(new Event("rentease:auth-changed"));
 
     return true;
   };
@@ -109,6 +113,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = () => {
     setUser(null);
     localStorage.clear();
+    window.dispatchEvent(new Event("rentease:auth-changed"));
   };
 
   const isAuthenticated = !!user && !!localStorage.getItem("ACCESS_TOKEN");

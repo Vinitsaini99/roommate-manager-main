@@ -20,6 +20,7 @@ import AdminDocuments from "./pages/admin/Documents";
 import AdminReports from "./pages/admin/Reports";
 import AdminTenantHistory from "./pages/admin/TenantHistory";
 import AdminSettings from "./pages/admin/Settings";
+import AdminTenants from "./pages/admin/Tenant";
 
 // Tenant Pages
 import TenantLayout from "./components/layout/TenantLayout";
@@ -62,6 +63,7 @@ function AppRoutes() {
       }>
         <Route index element={<AdminDashboard />} />
         <Route path="rooms" element={<AdminRooms />} />
+        <Route path="tenants" element={<AdminTenants />} />   {/* 👈 yahan */}
         <Route path="payments" element={<AdminPayments />} />
         <Route path="documents" element={<AdminDocuments />} />
         <Route path="reports" element={<AdminReports />} />

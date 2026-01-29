@@ -25,6 +25,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import api from "@/api/api";
 import { useData, Room, Tenant } from "@/contexts/DataContext";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency } from "@/utils/formatters";
@@ -117,7 +118,18 @@ export default function RoomModal({
   const [customRent, setCustomRent] = useState<number>(0);
   const [roomNumber, setRoomNumber] = useState<string>("");
 
-  const { tenants, createTenant, rooms, getRent, settings, removeTenant } = useData();
+  const {
+    tenants,
+    createTenant,
+    rooms,
+    getRent,
+    settings,
+    removeTenant,
+    updateRoom,
+  } = useData();
+
+
+  
   // Tenant details state - using refs to track initialization
   const [formInitialized, setFormInitialized] = useState(false);
   const [tenant1, setTenant1] = useState(createEmptyTenant());
@@ -136,6 +148,8 @@ export default function RoomModal({
   const [aadhaarNumber, setAadhaarNumber] = useState("");
   const [tokenMoney, setTokenMoney] = useState<number>(0);
   const [remarks, setRemarks] = useState("");
+  const [roomTypeUI, setRoomTypeUI] = useState(room?.type ?? "single");
+
   // const [selectedRoomId, setSelectedRoomId] = useState<number | null>(null);
 
   // const { tenants } = useData();
@@ -146,7 +160,10 @@ export default function RoomModal({
   //       {t.firstName} {t.lastName}
   //     </SelectItem>
   //   ))}
-  // </Select>;
+  // </Select>; 
+
+    
+
 
   const [formData, setFormData] = useState<Omit<Room, "id">>({
     roomId: room?.roomId ?? "", // ✅ string
@@ -333,7 +350,7 @@ export default function RoomModal({
   }, [roomType]);
 
   const handleNext = async () => {
-    // If creating a new room and moving from step 1 to step 2, save the room first
+    // ✅ New room: pehle room create/update karo, phir hi aage jao
     if (currentStep === 1 && !room) {
       try {
         await onSave({
@@ -342,13 +359,26 @@ export default function RoomModal({
           isAC,
           rent: customRent,
         });
-        // If onSave succeeds, move to next step
         setCurrentStep((prev) => prev + 1);
       } catch (error) {
         console.error("Error saving room:", error);
-        // Don't move forward if room save fails
+        // save fail ho gaya to aage mat badho
       }
-    } else if (currentStep < 4) {
+      return;
+    }
+
+    // ✅ Existing room: step 1 par background me backend room update (type/AC/rent) kar do,
+    // taaki Double/Triple capacity backend me bhi reflect ho.
+    if (currentStep === 1 && room) {
+      Promise.resolve(updateRoom(room.id, { type: roomType, isAC, rent: customRent })).catch((err: any) => {
+        console.error("Error updating room before tenant step:", err);
+      });
+      setCurrentStep((prev) => prev + 1);
+      return;
+    }
+
+    // ✅ Existing room: sirf wizard step badlo (room type/AC ka state already yahin se use ho raha hai)
+    if (currentStep < 4) {
       setCurrentStep((prev) => prev + 1);
     }
   };
@@ -386,22 +416,104 @@ export default function RoomModal({
     }
 
     try {
-      await createTenant({
-        firstName: tenant1.firstName,
-        lastName: tenant1.lastName,
-        email: tenant1.email,
-        phone: tenant1.phone,
-        city: tenant1.city,
-        state: tenant1.state,
-        pincode: tenant1.pincode,
-        aadhaarNumber: tenant1.aadhaarNumber,
-        tokenMoney: tenant1.tokenMoney,
-        remarks,
-        roomId: room.id, // ✅ backend FK only
-        joinDate: new Date().toISOString().split("T")[0],
+      // ✅ Ensure backend room type / AC / rent are in sync with wizard before creating tenants
+      await updateRoom(room.id, {
+        type: roomType,
+        isAC,
+        rent: customRent,
       });
 
-      toast({ title: "Tenant added successfully" });
+      const capacity = getRoomCapacity(roomType);
+      const candidates = [tenant1, tenant2, tenant3].slice(0, capacity);
+      const docsCandidates = [documents1, documents2, documents3].slice(0, capacity);
+
+      const toCreate = candidates
+        .map((t, idx) => ({ t, idx }))
+        .filter(({ t }) => t.firstName && t.lastName && t.email && t.phone);
+
+      // Client-side uniqueness checks (avoid backend 400)
+      const existingEmails = new Set(tenants.map((x) => (x.email || "").toLowerCase()));
+      const existingPhones = new Set(tenants.map((x) => (x.phone || "").replace(/\D/g, "")));
+      const existingAadhaar = new Set(tenants.map((x) => (x.aadhaarNumber || "").replace(/\D/g, "")));
+
+      const seenEmails = new Set<string>();
+      const seenPhones = new Set<string>();
+      const seenAadhaar = new Set<string>();
+
+      for (const { t, idx } of toCreate) {
+        const emailKey = (t.email || "").toLowerCase();
+        const phoneKey = (t.phone || "").replace(/\D/g, "");
+        const aadhaarKey = (t.aadhaarNumber || "").replace(/\D/g, "");
+
+        if (emailKey && (existingEmails.has(emailKey) || seenEmails.has(emailKey))) {
+          toast({
+            title: `Tenant ${idx + 1} error`,
+            description: "Email already exists. Please use a different email.",
+            variant: "destructive",
+          });
+          return;
+        }
+        if (phoneKey && (existingPhones.has(phoneKey) || seenPhones.has(phoneKey))) {
+          toast({
+            title: `Tenant ${idx + 1} error`,
+            description: "Phone number already exists. Please use a different phone.",
+            variant: "destructive",
+          });
+          return;
+        }
+        if (aadhaarKey && (existingAadhaar.has(aadhaarKey) || seenAadhaar.has(aadhaarKey))) {
+          toast({
+            title: `Tenant ${idx + 1} error`,
+            description: "Aadhaar already exists. Please use a different Aadhaar.",
+            variant: "destructive",
+          });
+          return;
+        }
+
+        seenEmails.add(emailKey);
+        seenPhones.add(phoneKey);
+        seenAadhaar.add(aadhaarKey);
+
+        // Documents required for each created tenant
+        const docs = docsCandidates[idx];
+        if (!docs?.addressProof || !docs?.idProof) {
+          toast({
+            title: `Tenant ${idx + 1} documents required`,
+            description: "Please upload Address Proof and ID Proof before saving.",
+            variant: "destructive",
+          });
+          return;
+        }
+      }
+
+      // Create tenants and upload documents
+      for (const { t, idx } of toCreate) {
+        const created = await createTenant({
+          firstName: t.firstName,
+          lastName: t.lastName,
+          email: t.email,
+          phone: t.phone,
+          city: t.city,
+          state: t.state,
+          pincode: t.pincode,
+          aadhaarNumber: t.aadhaarNumber,
+          tokenMoney: t.tokenMoney,
+          remarks,
+          roomId: room.id, // ✅ backend FK only
+          joinDate: new Date().toISOString().split("T")[0],
+        });
+
+        const docs = docsCandidates[idx];
+        // Use the same upload mechanism as TenantDocuments page (PATCH /tenants/:id with FormData)
+        const formData = new FormData();
+        if (docs?.addressProof) formData.append("address_doc", docs.addressProof);
+        if (docs?.idProof) formData.append("id_proof", docs.idProof);
+        await api.patch(`/tenants/${created.id}/`, formData, {
+          headers: { "Content-Type": "multipart/form-data" },
+        });
+      }
+
+      toast({ title: "✅ Tenant(s) added + documents uploaded" });
       onClose();
     } catch (error: any) {
       console.error("Error saving tenant:", error);
@@ -722,9 +834,39 @@ export default function RoomModal({
 
   return (
     <div className="space-y-6">
+      {/* Room details (occupied) */}
+      <div className="bg-muted/50 rounded-xl p-4">
+        <h4 className="font-medium text-foreground mb-3">Room Details</h4>
+        <div className="grid grid-cols-2 gap-2 text-sm">
+          <span className="text-muted-foreground">Room Number:</span>
+          <span className="font-medium">#{room.roomId}</span>
+
+          <span className="text-muted-foreground">Room Type:</span>
+          <span className="font-medium">
+            {room.type === "single"
+              ? "Single"
+              : room.type === "double"
+                ? "Double"
+                : "Triple"}{" "}
+            Bed
+          </span>
+
+          <span className="text-muted-foreground">AC Status:</span>
+          <span className="font-medium">{room.isAC ? "AC" : "Non-AC"}</span>
+
+          <span className="text-muted-foreground">Capacity:</span>
+          <span className="font-medium">{getRoomCapacity(room.type)}</span>
+
+          <span className="text-muted-foreground">Tenants in room:</span>
+          <span className="font-medium">
+            {room.tenants.length} / {getRoomCapacity(room.type)}
+          </span>
+        </div>
+      </div>
+
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
         <p className="text-sm text-blue-800">
-          ℹ️ This room is currently occupied. Tenant details are shown below.
+          ℹ️ This room is occupied. Tenant details are shown below.
         </p>
       </div>
 
@@ -812,6 +954,31 @@ export default function RoomModal({
               <p className="text-muted-foreground">Joining Date</p>
               <p className="font-medium">{tenant.joinDate}</p>
             </div>
+
+            <div>
+              <p className="text-muted-foreground">City</p>
+              <p className="font-medium">{tenant.city || "—"}</p>
+            </div>
+
+            <div>
+              <p className="text-muted-foreground">State</p>
+              <p className="font-medium">{tenant.state || "—"}</p>
+            </div>
+
+            <div>
+              <p className="text-muted-foreground">Pincode</p>
+              <p className="font-medium">{tenant.pincode || "—"}</p>
+            </div>
+
+            <div>
+              <p className="text-muted-foreground">Token Money</p>
+              <p className="font-medium">{tenant.tokenMoney ?? 0}</p>
+            </div>
+
+            <div className="col-span-2">
+              <p className="text-muted-foreground">Aadhaar</p>
+              <p className="font-medium">{tenant.aadhaarNumber || "—"}</p>
+            </div>
           </div>
         </div>
       ))}
@@ -827,40 +994,39 @@ export default function RoomModal({
 
 
   // Step 2: Tenant Details
-
   const renderTenantDetails = () => {
-  // 🔒 OCCUPIED = VIEW ONLY
-  if (room?.isOccupied) {
-    return renderOccupiedRoomView();
-  }
+    // 🔒 OCCUPIED = VIEW ONLY
+    if (room?.isOccupied) {
+      return renderOccupiedRoomView();
+    }
 
-  // ✅ AVAILABLE = FORM
-  return (
-    <div className="space-y-6">
-      <TenantFormFields
-        data={tenant1}
-        updateField={updateTenant1}
-        label="Tenant 1"
-      />
-
-      {(roomType === "double" || roomType === "triple") && (
+    // ✅ AVAILABLE = FORM
+    return (
+      <div className="space-y-6">
         <TenantFormFields
-          data={tenant2}
-          updateField={updateTenant2}
-          label="Tenant 2"
+          data={tenant1}
+          updateField={updateTenant1}
+          label="Tenant 1"
         />
-      )}
 
-      {roomType === "triple" && (
-        <TenantFormFields
-          data={tenant3}
-          updateField={updateTenant3}
-          label="Tenant 3"
-        />
-      )}
-    </div>
-  );
-};
+        {(roomType === "double" || roomType === "triple") && (
+          <TenantFormFields
+            data={tenant2}
+            updateField={updateTenant2}
+            label="Tenant 2"
+          />
+        )}
+
+        {roomType === "triple" && (
+          <TenantFormFields
+            data={tenant3}
+            updateField={updateTenant3}
+            label="Tenant 3"
+          />
+        )}
+      </div>
+    );
+  };
 
 
   // Step 3: Documents
@@ -995,6 +1161,11 @@ export default function RoomModal({
   );
 
   const renderCurrentStep = () => {
+    // 🔒 OCCUPIED room: show only room + tenant details (no wizard)
+    if (room?.isOccupied) {
+      return renderOccupiedRoomView();
+    }
+
     switch (currentStep) {
       case 1:
         return renderRoomDetails();
@@ -1025,85 +1196,91 @@ export default function RoomModal({
           </DialogTitle>
         </DialogHeader>
 
-        {/* Step Progress Indicator */}
-        <div className="py-4">
-          <div className="flex items-center justify-between">
-            {STEPS.map((step, index) => (
-              <React.Fragment key={step.id}>
-                <div className="flex flex-col items-center">
-                  <div
-                    className={cn(
-                      "w-8 h-8 md:w-10 md:h-10 rounded-full flex items-center justify-center transition-colors",
-                      currentStep >= step.id
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-muted text-muted-foreground",
-                    )}
-                  >
-                    <step.icon className="h-4 w-4 md:h-5 md:w-5" />
+        {/* Step Progress Indicator (only when room is NOT occupied) */}
+        {!room?.isOccupied && (
+          <div className="py-4">
+            <div className="flex items-center justify-between">
+              {STEPS.map((step, index) => (
+                <React.Fragment key={step.id}>
+                  <div className="flex flex-col items-center">
+                    <div
+                      className={cn(
+                        "w-8 h-8 md:w-10 md:h-10 rounded-full flex items-center justify-center transition-colors",
+                        currentStep >= step.id
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-muted text-muted-foreground",
+                      )}
+                    >
+                      <step.icon className="h-4 w-4 md:h-5 md:w-5" />
+                    </div>
+                    <span
+                      className={cn(
+                        "text-[10px] md:text-xs mt-1 text-center hidden sm:block",
+                        currentStep >= step.id
+                          ? "text-primary font-medium"
+                          : "text-muted-foreground",
+                      )}
+                    >
+                      {step.title}
+                    </span>
                   </div>
-                  <span
-                    className={cn(
-                      "text-[10px] md:text-xs mt-1 text-center hidden sm:block",
-                      currentStep >= step.id
-                        ? "text-primary font-medium"
-                        : "text-muted-foreground",
-                    )}
-                  >
-                    {step.title}
-                  </span>
-                </div>
-                {index < STEPS.length - 1 && (
-                  <div
-                    className={cn(
-                      "flex-1 h-0.5 mx-1 md:mx-2 transition-colors",
-                      currentStep > step.id ? "bg-primary" : "bg-muted",
-                    )}
-                  />
-                )}
-              </React.Fragment>
-            ))}
+                  {index < STEPS.length - 1 && (
+                    <div
+                      className={cn(
+                        "flex-1 h-0.5 mx-1 md:mx-2 transition-colors",
+                        currentStep > step.id ? "bg-primary" : "bg-muted",
+                      )}
+                    />
+                  )}
+                </React.Fragment>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Step Content */}
         <div className="min-h-[300px] py-4">{renderCurrentStep()}</div>
 
         {/* Navigation Buttons */}
-        <div className="flex flex-col-reverse sm:flex-row justify-between gap-3 pt-4 border-t border-border">
-          <Button
-            variant="outline"
-            onClick={currentStep === 1 ? onClose : handleBack}
-            className="w-full sm:w-auto"
-          >
-            {currentStep === 1 ? (
-              "Cancel"
-            ) : (
-              <>
-                <ChevronLeft className="h-4 w-4 mr-1" />
-                Back
-              </>
-            )}
-          </Button>
-
-          {currentStep < 4 ? (
-            <Button
-              onClick={handleNext}
-              className="gradient-primary w-full sm:w-auto"
-            >
-              Next
-              <ChevronRight className="h-4 w-4 ml-1" />
+        {room?.isOccupied ? (
+          <div className="flex justify-end gap-3 pt-4 border-t border-border">
+            <Button variant="outline" onClick={onClose} className="w-full sm:w-auto">
+              Close
             </Button>
-          ) : (
+          </div>
+        ) : (
+          <div className="flex flex-col-reverse sm:flex-row justify-between gap-3 pt-4 border-t border-border">
             <Button
-  onClick={handleSave}
-  disabled={room?.isOccupied}
-  className="gradient-primary w-full sm:w-auto"
->
-  <Check className="h-4 w-4 mr-1" />
-  Save Tenant
-</Button>
-          )}
-        </div>
+              variant="outline"
+              onClick={currentStep === 1 ? onClose : handleBack}
+              className="w-full sm:w-auto"
+            >
+              {currentStep === 1 ? (
+                "Cancel"
+              ) : (
+                <>
+                  <ChevronLeft className="h-4 w-4 mr-1" />
+                  Back
+                </>
+              )}
+            </Button>
+
+            {currentStep < 4 ? (
+              <Button
+                onClick={handleNext}
+                className="gradient-primary w-full sm:w-auto"
+              >
+                Next
+                <ChevronRight className="h-4 w-4 ml-1" />
+              </Button>
+            ) : (
+              <Button onClick={handleSave} className="gradient-primary w-full sm:w-auto">
+                <Check className="h-4 w-4 mr-1" />
+                Save Tenant(s)
+              </Button>
+            )}
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );

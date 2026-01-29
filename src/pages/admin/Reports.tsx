@@ -7,7 +7,7 @@ import { formatCurrency } from '@/utils/formatters';
 export default function AdminReports() {
   const { payments, rooms, tenants } = useData();
 
-  // Monthly revenue data
+  // Monthly revenue data (will be mutated with real values)
   const monthlyData = [
     { month: 'Jan', revenue: 0, expected: 0 },
     { month: 'Feb', revenue: 0, expected: 0 },
@@ -28,27 +28,55 @@ export default function AdminReports() {
     'July': 6, 'August': 7, 'September': 8, 'October': 9, 'November': 10, 'December': 11
   };
 
-  // Calculate monthly revenue
-  payments.forEach(payment => {
-    const monthIndex = monthMap[payment.month];
+  // Calculate monthly revenue from live payments
+  payments.forEach((payment) => {
+    const key = payment.month || new Date(payment.date_month).toLocaleString("en-IN", { month: "long" });
+    const monthIndex = monthMap[key];
+    const amount = payment.totalAmount ?? payment.amount ?? 0;
     if (monthIndex !== undefined) {
-      if (payment.status === 'paid') {
-        monthlyData[monthIndex].revenue += payment.totalAmount;
+      if (payment.status === "paid") {
+        monthlyData[monthIndex].revenue += amount;
       }
-      monthlyData[monthIndex].expected += payment.totalAmount;
+      monthlyData[monthIndex].expected += amount;
     }
   });
 
-  // Yearly data (last 3 years for comparison)
-  const yearlyData = [
-    // { year: '2022', revenue: 850000 },
-    // { year: '2023', revenue: 1250000 },
-    // { year: '2024', revenue: payments.filter(p => p.status === 'paid').reduce((sum, p) => sum + p.totalAmount, 0) || 720000 },
-  ];
+  // Yearly data based on payments
+  const yearlyMap = new Map<number, number>();
+  payments.forEach((p) => {
+    const year =
+      p.year || (p.date_month ? new Date(p.date_month).getFullYear() : undefined);
+    if (!year) return;
+    if (p.status !== "paid") return;
+    const amt = p.totalAmount ?? p.amount ?? 0;
+    yearlyMap.set(year, (yearlyMap.get(year) ?? 0) + amt);
+  });
 
-  const totalRevenue = payments.filter(p => p.status === 'paid').reduce((sum, p) => sum + p.totalAmount, 0);
-  const totalExpected = payments.reduce((sum, p) => sum + p.totalAmount, 0);
-  const avgMonthlyRevenue = totalRevenue / 6; // Based on 6 months of data
+  const yearlyData = Array.from(yearlyMap.entries())
+    .sort((a, b) => a[0] - b[0])
+    .map(([year, revenue]) => ({ year: String(year), revenue }));
+
+  const totalRevenue = payments
+    .filter((p) => p.status === "paid")
+    .reduce((sum, p) => sum + (p.totalAmount ?? p.amount ?? 0), 0);
+
+  const totalExpected = payments.reduce(
+    (sum, p) => sum + (p.totalAmount ?? p.amount ?? 0),
+    0,
+  );
+
+  const distinctMonths = new Set(
+    payments.map(
+      (p) =>
+        `${p.year || new Date(p.date_month).getFullYear()}-${
+          p.month ||
+          new Date(p.date_month).toLocaleString("en-IN", { month: "long" })
+        }`,
+    ),
+  );
+
+  const avgMonthlyRevenue =
+    distinctMonths.size > 0 ? totalRevenue / distinctMonths.size : 0;
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -93,9 +121,9 @@ export default function AdminReports() {
           <div className="flex items-start justify-between">
             <div>
               <p className="text-sm text-muted-foreground">Avg Monthly</p>
-              {/* <p className="text-2xl font-bold text-foreground mt-1">
+              <p className="text-2xl font-bold text-foreground mt-1">
                 {formatCurrency(avgMonthlyRevenue)}
-              </p> */}
+              </p>
               <p className="text-xs text-muted-foreground mt-1">Per month avg</p>
             </div>
             <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
@@ -108,10 +136,15 @@ export default function AdminReports() {
           <div className="flex items-start justify-between">
             <div>
               <p className="text-sm text-muted-foreground">Collection Rate</p>
-              {/* <p className="text-2xl font-bold text-foreground mt-1">
-                {totalExpected > 0 ? Math.round((totalRevenue / totalExpected) * 100) : 0}%
-              </p> */}
-              <p className="text-xs text-muted-foreground mt-1">Paid vs expected</p>
+              <p className="text-2xl font-bold text-foreground mt-1">
+                {totalExpected > 0
+                  ? Math.round((totalRevenue / totalExpected) * 100)
+                  : 0}
+                %
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Paid vs expected
+              </p>
             </div>
             <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
               <BarChart3 className="h-5 w-5 text-primary" />

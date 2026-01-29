@@ -79,10 +79,15 @@ export const generateTenantPDF = (tenant: Tenant, room: Room | undefined) => {
       pdf.setTextColor(0, 0, 0);
       
       const roomInfo: [string, string][] = [
-        ['Room Number:', `#${room.roomNumber}`],
-        ['Room Type:', room.type.charAt(0).toUpperCase() + room.type.slice(1)],
+        ['Room Number:', `#${room.roomId}`],
+        [
+          'Room Type:',
+          room.type
+            ? room.type.charAt(0).toUpperCase() + room.type.slice(1)
+            : 'N/A',
+        ],
         ['AC Status:', room.isAC ? 'AC' : 'Non-AC'],
-        ['Monthly Rent:', `₹${room.rent}`],
+        ['Monthly Rent:', `₹${room.rent ?? 0}`],
       ];
       
       roomInfo.forEach(([label, value]) => {

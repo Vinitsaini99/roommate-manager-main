@@ -1,19 +1,38 @@
-import React, { useState } from 'react';
-import { FileText, Search, CheckCircle, Clock, Eye, Check } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { FileText, Search, CheckCircle, Clock, Eye, Check, Upload } from 'lucide-react';
 import { useData } from '@/contexts/DataContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+import api from '@/api/api';
+
+const BACKEND =
+  import.meta.env.VITE_API_URL || 'http://localhost:8000/';
 
 export default function AdminDocuments() {
-  const { tenants, verifyDocument, verifyAllDocuments } = useData();
+  const { tenants, rooms, fetchTenants, verifyDocument, verifyAllDocuments } = useData();
 
   const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState('');
   const [filter, setFilter] = useState<'all' | 'pending' | 'verified'>('all');
+  const [uploadingTenantId, setUploadingTenantId] = useState<string | null>(null);
+  const [pendingFiles, setPendingFiles] = useState<Record<string, { address?: File; id?: File }>>({});
 
   const activeTenants = tenants.filter(t => t.isActive);
+
+  const makeDocUrl = (path?: string | null) => {
+    if (!path) return undefined;
+    const url = String(path);
+    if (url.startsWith('http://') || url.startsWith('https://')) return url;
+    const base = BACKEND.replace(/\/$/, '');
+    return `${base}${url.startsWith('/') ? '' : '/'}${url}`;
+  };
+
+  const getRoomLabel = (tenant: any) => {
+    const room = rooms.find((r) => r.id === tenant.roomPk || r.roomId === tenant.roomId);
+    return room?.roomId || tenant.roomId || '—';
+  };
 
   const filteredTenants = activeTenants.filter(tenant => {
     const matchesSearch = 
@@ -35,6 +54,70 @@ export default function AdminDocuments() {
 const handleVerifyAll = (tenantId: string) => {
   verifyAllDocuments(tenantId); // ✅ bas call
 };
+
+  const tenantDocsStatus = useMemo(() => {
+    return new Map(
+      activeTenants.map((t: any) => {
+        const rawAddress = t.addressDocUrl || t.address_doc || t.address_proof;
+        const rawId = t.idProofUrl || t.id_proof || t.id_proof_doc;
+        return [
+          t.id,
+          {
+            address: makeDocUrl(rawAddress),
+            id: makeDocUrl(rawId),
+          },
+        ];
+      }),
+    );
+  }, [activeTenants]);
+
+  const handleFileChange = (tenantId: string, type: 'address' | 'id', file?: File) => {
+    setPendingFiles((prev) => ({
+      ...prev,
+      [tenantId]: {
+        ...prev[tenantId],
+        [type]: file,
+      },
+    }));
+  };
+
+  const uploadForTenant = async (tenantId: string) => {
+    const files = pendingFiles[tenantId];
+    if (!files?.address && !files?.id) {
+      toast({
+        title: 'No file selected',
+        description: 'Choose a document first.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const formData = new FormData();
+    if (files.address) formData.append('address_doc', files.address);
+    if (files.id) formData.append('id_proof', files.id);
+
+    setUploadingTenantId(tenantId);
+    try {
+      await api.patch(`/tenants/${tenantId}/`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      toast({ title: '✅ Uploaded', description: 'Document(s) uploaded successfully.' });
+      setPendingFiles((prev) => {
+        const next = { ...prev };
+        delete next[tenantId];
+        return next;
+      });
+      await fetchTenants();
+    } catch (err: any) {
+      toast({
+        title: '❌ Upload failed',
+        description: err?.response?.data?.detail || err?.response?.data?.error || err?.message || 'Upload failed',
+        variant: 'destructive',
+      });
+    } finally {
+      setUploadingTenantId(null);
+    }
+  };
 
 
 
@@ -122,7 +205,7 @@ const handleVerifyAll = (tenantId: string) => {
                       {tenant.firstName} {tenant.lastName}
                     </h3>
                     <p className="text-xs md:text-sm text-muted-foreground truncate">
-                      Room #{tenant.roomNumber} • {tenant.email}
+                      Room #{getRoomLabel(tenant)} • {tenant.email}
                     </p>
                   </div>
                 </div>
@@ -149,59 +232,91 @@ const handleVerifyAll = (tenantId: string) => {
               </div>
             </div>
 
-            {/* <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4 mt-4 pt-4 border-t border-border">
-              {tenant.documents.map((doc) => (
-                <div
-                  key={doc.id}
-                  className={cn(
-                    'flex items-center justify-between p-3 md:p-4 rounded-xl',
-                    doc.verified ? 'bg-success/5 border border-success/20' : 'bg-warning/5 border border-warning/20'
-                  )}
-                >
-                  <div className="flex items-center gap-2 md:gap-3 min-w-0">
-                    <FileText className={cn(
-                      'h-4 w-4 md:h-5 md:w-5 shrink-0',
-                      doc.verified ? 'text-success' : 'text-warning'
-                    )} />
-                    <div className="min-w-0">
-                      <p className="font-medium text-foreground capitalize text-sm truncate">
-                        {doc.type.replace('_', ' ')}
-                      </p>
-                      <p className="text-xs text-muted-foreground truncate">{doc.name}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1 md:gap-2 shrink-0">
-                    <Button
-  size="sm"
-  variant="ghost"
-  className="h-8 w-8 p-0"
-  onClick={() => {
-    console.log("DOC DATA 👉", doc);
-  }}
->
-  <Eye className="h-4 w-4" />
-</Button>
+            {/* Documents + Upload missing */}
+            <div className="mt-4 pt-4 border-t border-border space-y-3">
+              {(() => {
+                const status = tenantDocsStatus.get(tenant.id) || { address: undefined, id: undefined };
+                return (
+                  <>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div className="p-3 rounded-xl border bg-muted/30">
+                        <p className="text-sm font-medium text-foreground">Address Proof</p>
+                        {status.address ? (
+                          <div className="flex items-center justify-between mt-2">
+                            <a
+                              href={status.address}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-xs text-primary underline truncate"
+                            >
+                              View uploaded
+                            </a>
+                            <Button size="sm" variant="outline" asChild>
+                              <a href={status.address} target="_blank" rel="noreferrer">
+                                <Eye className="h-4 w-4 mr-1" />
+                                View
+                              </a>
+                            </Button>
+                          </div>
+                        ) : (
+                          <div className="mt-2 space-y-2">
+                            <p className="text-xs text-muted-foreground">Not uploaded</p>
+                            <input
+                              type="file"
+                              accept=".pdf,.jpg,.jpeg,.png"
+                              onChange={(e) => handleFileChange(tenant.id, 'address', e.target.files?.[0])}
+                            />
+                          </div>
+                        )}
+                      </div>
 
-                    {!doc.verified && (
+                      <div className="p-3 rounded-xl border bg-muted/30">
+                        <p className="text-sm font-medium text-foreground">ID Proof</p>
+                        {status.id ? (
+                          <div className="flex items-center justify-between mt-2">
+                            <a
+                              href={status.id}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-xs text-primary underline truncate"
+                            >
+                              View uploaded
+                            </a>
+                            <Button size="sm" variant="outline" asChild>
+                              <a href={status.id} target="_blank" rel="noreferrer">
+                                <Eye className="h-4 w-4 mr-1" />
+                                View
+                              </a>
+                            </Button>
+                          </div>
+                        ) : (
+                          <div className="mt-2 space-y-2">
+                            <p className="text-xs text-muted-foreground">Not uploaded</p>
+                            <input
+                              type="file"
+                              accept=".pdf,.jpg,.jpeg,.png"
+                              onChange={(e) => handleFileChange(tenant.id, 'id', e.target.files?.[0])}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end">
                       <Button
                         size="sm"
-                        variant="outline"
-                        onClick={() => handleVerifyDoc(tenant.id, doc.id)}
-                        className="h-8 px-2 text-xs"
+                        className="gradient-primary"
+                        onClick={() => uploadForTenant(tenant.id)}
+                        disabled={uploadingTenantId === tenant.id}
                       >
-                        Verify
+                        <Upload className="h-4 w-4 mr-1" />
+                        {uploadingTenantId === tenant.id ? 'Uploading...' : 'Upload selected'}
                       </Button>
-                    )}
-                    {doc.verified && (
-                      <span className="status-badge status-verified text-xs">
-                        <CheckCircle className="h-3 w-3 mr-1" />
-                        Verified
-                      </span>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div> */}
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
           </div>
         ))}
 

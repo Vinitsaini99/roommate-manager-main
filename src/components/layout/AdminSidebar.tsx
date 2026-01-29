@@ -10,7 +10,8 @@ import {
   Settings,
   LogOut,
   Building2,
-  X
+  X,
+  Users
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
@@ -19,6 +20,7 @@ import { Button } from '@/components/ui/button';
 const navItems = [
   { path: '/admin', icon: LayoutDashboard, label: 'Dashboard', end: true },
   { path: '/admin/rooms', icon: DoorOpen, label: 'Rooms' },
+  { path: '/admin/tenants', icon: Users, label: 'Tenants' },
   { path: '/admin/payments', icon: CreditCard, label: 'Payments' },
   { path: '/admin/documents', icon: FileText, label: 'Documents' },
   { path: '/admin/reports', icon: BarChart3, label: 'Reports' },
@@ -96,11 +98,11 @@ export default function AdminSidebar({ isOpen, onClose }: AdminSidebarProps) {
           <div className="flex items-center gap-3 mb-3">
             <div className="h-10 w-10 rounded-full gradient-primary flex items-center justify-center">
               <span className="text-sm font-semibold text-primary-foreground">
-                {user?.name?.charAt(0) || 'A'}
+                {user?.email?.split('@')[0]?.charAt(0) || 'A'}
               </span>
             </div>
             <div>
-              <p className="text-sm font-medium text-sidebar-foreground">{user?.name}</p>
+              <p className="text-sm font-medium text-sidebar-foreground">{user?.email}</p> 
               <p className="text-xs text-sidebar-foreground/60">Administrator</p>
             </div>
           </div>

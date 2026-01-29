@@ -788,40 +788,29 @@ const fetchTenantHistory = useCallback(async () => {
   }, [fetchRooms, fetchTenants, fetchPayments, fetchTenantHistory]);
 
 
-  // ✅ FIX 2: Link tenants to rooms - CRITICAL: Filter ONLY ACTIVE tenants!
+  // ✅ FIX 2: Link tenants to rooms - only depend on tenants, not rooms!
   useEffect(() => {
-    if (rooms.length === 0) return;
-
-    console.log(`\n🔗 LINKING TENANTS TO ROOMS:`);
-    const activeTenants = tenants.filter(t => t.isActive);
-    console.log(`   Total tenants: ${tenants.length}, Active: ${activeTenants.length}`);
+    if (rooms.length === 0 || tenants.length === 0) return;
 
     const updatedRooms = rooms.map((room) => {
-      // 🔑 CRITICAL: Filter BOTH conditions: isActive AND roomPk match
-      const roomTenants = activeTenants.filter(
-        (t) => t.roomPk === room.id || t.roomId === room.roomId
-      );
+      const roomTenants = tenants.filter((t) => t.roomPk === room.id);
 
-      const newIsOccupied = roomTenants.length > 0;
-      const oldIsOccupied = room.isOccupied;
-      const countChanged = roomTenants.length !== room.tenants.length;
-
-      // Log changes
-      if (countChanged || newIsOccupied !== oldIsOccupied) {
-        console.log(`   📍 Room ${room.roomId}:`);
-        console.log(`      Tenants: ${room.tenants.length} → ${roomTenants.length}`);
-        console.log(`      Status: ${oldIsOccupied ? "Occupied" : "Available"} → ${newIsOccupied ? "Occupied" : "Available"}`);
+      // ✅ Only update if tenants actually changed for this room
+      if (
+        roomTenants.length === room.tenants.length &&
+        roomTenants.every((t) => room.tenants.some((rt) => rt.id === t.id))
+      ) {
+        return room;
       }
 
       return {
         ...room,
         tenants: roomTenants,
-        isOccupied: newIsOccupied,
+        isOccupied: roomTenants.length > 0,
       };
     });
 
     setRooms(updatedRooms);
-    console.log(`✅ Room-tenant linking complete\n`);
   }, [tenants]);
 
 
@@ -970,13 +959,9 @@ const moveTenantToHistory = async (
   tenantId: string,
   reason: string = "Room vacated",
 ) => {
-  console.log("=".repeat(60));
-  console.log("🔴 START: moveTenantToHistory");
-  console.log("=".repeat(60));
-
   const tenant = tenants.find((t) => t.id === tenantId);
   if (!tenant) {
-    console.error("❌ Tenant not found:", tenantId);
+    console.error("❌ Tenant not found for history move:", tenantId);
     return;
   }
 
@@ -984,79 +969,77 @@ const moveTenantToHistory = async (
     (r) => r.id === tenant.roomPk || r.roomId === tenant.roomId,
   );
 
-  console.log("📋 INPUT DATA:", {
-    tenantId: tenant.id,
+  console.log("🔄 Starting: Moving tenant to history:", {
+    tenantId,
     tenantName: `${tenant.firstName} ${tenant.lastName}`,
-    roomPk: tenant.roomPk,
     roomId: tenant.roomId,
     roomBackendId: room?.id,
-    roomStatus: room?.isOccupied ? "Occupied" : "Available",
+    reason,
   });
 
-  const todayDate = new Date().toISOString().split("T")[0];
+  const todayDate = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
 
-  // ============================================================
-  // STEP 1: Update Backend - Tenant inactive
-  // ============================================================
-  console.log("\n📤 STEP 1: Mark tenant inactive on backend...");
+  // Step 2: Update tenant to inactive on backend
   try {
-    await api.patch(`/tenants/${tenantId}/`, { is_active: false });
-    console.log("✅ Tenant backend updated");
+    console.log(`📤 Updating tenant ${tenantId} to inactive on backend...`);
+    const tenantUpdatePayload = {
+      is_active: false,
+    };
+    console.log("📋 Tenant update payload:", tenantUpdatePayload);
+    
+    const res = await api.patch(`/tenants/${tenantId}/`, tenantUpdatePayload);
+    console.log("✅ Tenant marked as inactive on backend:", res.data);
   } catch (err: any) {
-    console.error("⚠️ Tenant update failed:", err?.response?.status);
+    console.error(
+      "❌ Failed to update tenant on backend:",
+      err?.response?.status,
+      err?.response?.data || err?.message,
+    );
   }
 
-  // ============================================================
-  // STEP 2: Update Backend - Room available
-  // ============================================================
-  console.log("\n📤 STEP 2: Mark room available on backend...");
-  if (room?.id) {
+  // Step 1: Update room on backend FIRST
+  if (room && room.id) {
     try {
-      await api.patch(`/rooms/${room.id}/`, { status: "Available" });
-      console.log("✅ Room backend updated");
+      console.log(`📤 Updating room ${room.id} to Available on backend...`);
+      const roomUpdatePayload = {
+        status: "Available",
+      };
+      console.log("📋 Room update payload:", roomUpdatePayload);
+      
+      const res = await api.patch(`/rooms/${room.id}/`, roomUpdatePayload);
+      console.log("✅ Room marked as available on backend:", res.data);
     } catch (err: any) {
-      console.error("⚠️ Room update failed:", err?.response?.status);
+      console.error(
+        "❌ Failed to update room status on backend:",
+        err?.response?.status,
+        err?.response?.data || err?.message,
+      );
     }
   }
 
-  // ============================================================
-  // STEP 3: Update Frontend - Tenant inactive
-  // ============================================================
-  console.log("\n🔄 STEP 3: Update frontend - tenant inactive...");
-  const newTenants = tenants.map((t) =>
-    t.id === tenantId ? { ...t, isActive: false } : t,
+  // Step 3: Update frontend state - Mark tenant as inactive
+  setTenants((prev) =>
+    prev.map((t) =>
+      t.id === tenantId ? { ...t, isActive: false } : t,
+    ),
   );
-  setTenants(newTenants);
-  console.log(`✅ Tenants updated. Active now: ${newTenants.filter(t => t.isActive).length}`);
+  console.log("✅ Tenant marked as inactive (frontend)");
 
-  // ============================================================
-  // STEP 4: Update Frontend - Room available & remove tenant
-  // ============================================================
-  console.log("\n🔄 STEP 4: Update frontend - room available...");
+  // Step 4: Update frontend state - Mark room as available
   if (room) {
-    const newRooms = rooms.map((r) => {
-      if (r.id === room.id) {
-        const newRoomTenants = r.tenants.filter((t) => t.id !== tenantId);
-        const nowOccupied = newRoomTenants.length > 0;
-        console.log(`   Room ${r.roomId}: ${r.tenants.length} → ${newRoomTenants.length} tenants`);
-        console.log(`   Room ${r.roomId}: ${r.isOccupied ? "Occupied" : "Available"} → ${nowOccupied ? "Occupied" : "Available"}`);
-        return {
-          ...r,
-          tenants: newRoomTenants,
-          isOccupied: nowOccupied,
-        };
-      }
-      return r;
-    });
-    setRooms(newRooms);
-    console.log("✅ Rooms updated");
+    setRooms((prev) =>
+      prev.map((r) =>
+        r.id === room.id
+          ? { ...r, isOccupied: false, tenants: r.tenants.filter(t => t.id !== tenantId) }
+          : r,
+      ),
+    );
+    console.log("✅ Room marked as available (frontend)");
   }
 
-  // ============================================================
-  // STEP 5: Add to History
-  // ============================================================
-  console.log("\n📝 STEP 5: Add to history...");
+  // Step 5: Create history entry locally
   const tenantNameDisplay = `${tenant.firstName} ${tenant.lastName}`.trim() || "Unknown";
+  
   const localEntry: TenantHistory = {
     id: `local_${Date.now()}`,
     tenantName: tenantNameDisplay,
@@ -1074,24 +1057,24 @@ const moveTenantToHistory = async (
     facilities: [],
   };
 
-  setTenantHistory((prev) => [localEntry, ...prev]);
-  console.log(`✅ Added ${tenantNameDisplay} to history`);
+  console.log("📝 History entry to create:", localEntry);
 
-  // ============================================================
-  // STEP 6: Sync Backend
-  // ============================================================
-  console.log("\n🔄 STEP 6: Sync with backend...");
+  // Add to frontend history
+  setTenantHistory((prev) => [localEntry, ...prev]);
+  console.log("✅ Tenant history entry created (frontend):", tenantNameDisplay);
+
+  // Step 6: Try to refresh from backend
   try {
-    await new Promise(resolve => setTimeout(resolve, 300));
-    await Promise.all([fetchTenants(), fetchRooms(), fetchTenantHistory()]);
-    console.log("✅ Backend synced");
+    console.log("📥 Refreshing data from backend...");
+    await fetchTenantHistory();
+    await fetchRooms();
+    await fetchTenants();
+    console.log("✅ Data refreshed from backend");
   } catch (err: any) {
-    console.warn("⚠️ Sync failed:", err?.message);
+    console.warn("⚠️ Could not refresh data from backend:", err?.message);
   }
 
-  console.log("\n" + "=".repeat(60));
-  console.log("🟢 COMPLETE: moveTenantToHistory SUCCESS!");
-  console.log("=".repeat(60));
+  console.log("✅ Tenant move to history COMPLETE!");
 };
 
 
