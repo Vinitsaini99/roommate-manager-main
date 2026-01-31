@@ -297,45 +297,48 @@ export function DataProvider({ children }: { children: ReactNode }) {
         join_date: data.joinDate || new Date().toISOString().split("T")[0],
       };
 
-      console.log("📤 Creating tenant with payload:", payload);
-      const res = await api.post("/tenants/", payload);
-      console.log("✅ Tenant created on backend:", res.data);
+      console.log("Creating tenant with payload:", payload);
+     const res = await api.post("/tenants/", payload);
+console.log("Tenant created:", res.data);
 
       const created = mapTenantFromApi(res.data);
 
-      // Step 1: Add to frontend tenant list
+      // 🔥 frontend tenant list update
       setTenants((prev) => [...prev, created]);
-      console.log("✅ Tenant added to frontend");
 
-      // Step 2: Mark room as occupied on backend
-      const room = rooms.find((r) => r.roomId === String(roomId) || r.id === String(roomId));
-      if (room) {
-        try {
-          console.log(`📤 Marking room ${room.id} as occupied...`);
-          const roomUpdatePayload = {
-            status: "Occupied",
-          };
-          console.log("📋 Room update payload:", roomUpdatePayload);
-          
-          const res = await api.patch(`/rooms/${room.id}/`, roomUpdatePayload);
-          console.log("✅ Room marked as occupied on backend:", res.data);
-        } catch (err: any) {
-          console.warn("⚠️ Could not mark room as occupied:", err?.response?.status, err?.response?.data);
-        }
-      }
+// 🔥 rooms re-fetch (safe)
+await fetchRooms();
 
-      // Step 3: Refresh both lists
+
       try {
         await fetchRooms();
-        await fetchTenants();
-        console.log("✅ Data refreshed from backend");
       } catch (err: any) {
-        console.warn("⚠️ Failed to refresh data:", err?.message);
+        if (err?.response?.status !== 401) {
+          console.warn("Failed to refresh rooms after tenant creation:", err);
+        }
       }
 
       return created;
     } catch (error: any) {
-      console.error("❌ createTenant error:", error);
+      console.error("createTenant error:", error);
+      const initializeRooms = async (totalRooms: number) => {
+        // 1️⃣ Rooms create API
+        await api.post("/api/rooms/initialize/", {
+          total_rooms: totalRooms,
+        });
+
+        // 2️⃣ Fresh rooms fetch
+        const res = await api.get("/api/rooms/");
+
+        // 3️⃣ Update rooms state (THIS makes cards show)
+        setRooms(res.data);
+
+        // 4️⃣ Update settings
+        setSettings((prev) => ({
+          ...prev,
+          totalRooms: totalRooms,
+        }));
+      };
 
       const status = error?.response?.status;
       if (status === 401) {
@@ -402,8 +405,23 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
         try {
           console.log(`Creating room #${i}:`, payload);
-          await api.post("/rooms/", payload);
-          console.log(`Room #${i} created successfully`);
+          // Try the common endpoints used in this project. backend may be mounted under /api/
+          const endpoints = ["/rooms/", "/api/rooms/"];
+          let created = false;
+          for (const ep of endpoints) {
+            try {
+              await api.post(ep, { ...payload, facility_id: payload.facility, facility: payload.facility });
+              console.log(`Room #${i} created successfully via ${ep}`);
+              created = true;
+              break;
+            } catch (e) {
+              console.warn(`Attempt to create room #${i} via ${ep} failed:`, e?.response?.status);
+            }
+          }
+
+          if (!created) {
+            throw new Error(`All endpoints failed for room #${i}`);
+          }
         } catch (err: any) {
           const status = err?.response?.status;
           const msg =
@@ -426,7 +444,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const deleteAllRooms = async () => {
     try {
       // First, fetch fresh list from backend to ensure we're deleting everything
-      const freshRes = await api.get("/rooms/");
+      // Try both /rooms/ and /api/rooms/ to support different router prefixes
+      let freshRes: any;
+      try {
+        freshRes = await api.get("/rooms/");
+      } catch (e) {
+        freshRes = await api.get("/api/rooms/");
+      }
       const allRoomsFromBackend = Array.isArray(freshRes.data)
         ? freshRes.data
         : freshRes.data?.results || [];
@@ -440,7 +464,19 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
       for (const room of allRoomsFromBackend) {
         try {
-          await api.delete(`/rooms/${room.id}/`);
+          // delete endpoint may be mounted under /api/
+          const deleteEndpoints = [`/rooms/${room.id}/`, `/api/rooms/${room.id}/`];
+          let deleted = false;
+          for (const dEp of deleteEndpoints) {
+            try {
+              await api.delete(dEp);
+              deleted = true;
+              break;
+            } catch (e) {
+              // try next
+            }
+          }
+          if (!deleted) throw new Error('Delete failed');
           deletedCount++;
           console.log(
             `✅ Room #${room.room_number || room.id} (Backend ID: ${room.id}) deleted`,
@@ -529,29 +565,39 @@ export function DataProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      const res = await api.get("/rooms/");
-      console.log("✅ ROOMS API Response:", {
-        status: res.status,
-        data: res.data,
-        type: typeof res.data,
-        isArray: Array.isArray(res.data),
-      });
+      // Try both common endpoints in case router is mounted under /api/
+      let res: any;
+      try {
+        res = await api.get("/rooms/");
+      } catch (e) {
+        console.warn("fetchRooms: /rooms/ failed, trying /api/rooms/", e?.response?.status);
+        res = await api.get("/api/rooms/");
+      }
+      console.log("ROOMS FROM API 👉", res.data);
+      console.log(
+        "RESPONSE TYPE:",
+        typeof res.data,
+        "IS ARRAY:",
+        Array.isArray(res.data),
+      );
 
       // Check if response is an array or object with array inside
       const roomsArray = Array.isArray(res.data)
         ? res.data
         : res.data?.results || res.data?.data || [];
-      
-      console.log(`📊 Processed ${roomsArray.length} rooms`);
+      console.log("ROOMS ARRAY:", roomsArray);
+
+      if (roomsArray.length === 0) {
+        console.warn("No rooms found in API response");
+      }
 
       setRooms(roomsArray.map(mapRoomFromApi));
     } catch (err: any) {
-      console.error("❌ fetchRooms ERROR:", {
-        status: err?.response?.status,
-        message: err?.message,
-        data: err?.response?.data,
-        url: err?.config?.url,
-      });
+      console.error("fetchRooms ERROR:", err);
+      if (err?.response?.status === 401) {
+        console.warn("Unauthorized - token expired");
+      }
+      // keep last known state to avoid dashboard flicker
     }
   }, []);
 
@@ -561,17 +607,33 @@ export function DataProvider({ children }: { children: ReactNode }) {
     const toBackendAc = (isAC: boolean) => (isAC ? "AC" : "Non-AC");
 
     // Keep payload aligned with backend expectations used elsewhere in app
-    const res = await api.post("/rooms/", {
+    const payload = {
       room_id: String(room.roomId ?? ""),
       room_type: toBackendRoomType(room.type),
       ac_non_ac: toBackendAc(room.isAC),
       room_rent: Number(room.rent ?? 0),
       status: "Available",
       facility: 1,
+      facility_id: 1,
       remarks: "",
-    });
+    };
 
-    setRooms((prev) => [...prev, mapRoomFromApi(res.data)]);
+    // Try both endpoints until one succeeds
+    const endpoints = ["/rooms/", "/api/rooms/"];
+    let lastErr: any = null;
+    for (const ep of endpoints) {
+      try {
+        const res = await api.post(ep, payload);
+        setRooms((prev) => [...prev, mapRoomFromApi(res.data)]);
+        return;
+      } catch (err: any) {
+        console.warn(`addRoom: POST ${ep} failed:`, err?.response?.status, err?.response?.data);
+        lastErr = err;
+      }
+    }
+
+    // If we reach here, both attempts failed
+    throw lastErr;
   };
 
   const updateRoom = async (id: string, updates: Partial<Room>) => {
@@ -605,132 +667,110 @@ export function DataProvider({ children }: { children: ReactNode }) {
       }
 
       const res = await api.get("/tenants/");
-      console.log("✅ TENANTS API Response:", {
-        status: res.status,
-        data: res.data,
-        type: typeof res.data,
-        isArray: Array.isArray(res.data),
-      });
+      console.log("TENANTS FROM API 👉", res.data);
+      console.log(
+        "TENANTS RESPONSE TYPE:",
+        typeof res.data,
+        "IS ARRAY:",
+        Array.isArray(res.data),
+      );
 
       // Check if response is an array or object with array inside
       const tenantsArray = Array.isArray(res.data)
         ? res.data
         : res.data?.results || res.data?.data || [];
-      
-      console.log(`📊 Processed ${tenantsArray.length} tenants`);
+      console.log("TENANTS ARRAY:", tenantsArray);
+
+      if (tenantsArray.length === 0) {
+        console.warn("No tenants found in API response");
+      }
 
       setTenants(tenantsArray.map(mapTenantFromApi));
     } catch (err: any) {
-      console.error("❌ fetchTenants ERROR:", {
-        status: err?.response?.status,
-        message: err?.message,
-        data: err?.response?.data,
-        url: err?.config?.url,
-      });
+      console.error("fetchTenants error", err);
+      if (err?.response?.status === 401) {
+        console.warn("Unauthorized - token expired");
+      }
+      // keep last known state to avoid dashboard flicker
     }
   }, []);
 
   const fetchPayments = useCallback(async () => {
   try {
-    const token = localStorage.getItem("ACCESS_TOKEN");
-    if (!token) {
-      console.warn("No auth token - skipping fetchPayments");
-      return;
-    }
-
     const res = await api.get("/electricity-bills/");
-    console.log("✅ PAYMENTS API Response:", {
-      status: res.status,
-      data: res.data,
-      type: typeof res.data,
-      isArray: Array.isArray(res.data),
-    });
+    console.log("PAYMENTS FROM API 👉", res.data);
     
     // Handle array or paginated response
     const paymentsArray = Array.isArray(res.data)
       ? res.data
       : res.data?.results || res.data?.data || [];
     
-    console.log(`📊 Processed ${paymentsArray.length} payments`);
+    console.log("PAYMENTS ARRAY:", paymentsArray);
     
     // Map payments from API format to frontend format
     const mappedPayments = paymentsArray.map(mapPaymentFromApi);
     setPayments(mappedPayments);
-  } catch (err: any) {
-    console.error("❌ fetchPayments ERROR:", {
-      status: err?.response?.status,
-      message: err?.message,
-      data: err?.response?.data,
-      url: err?.config?.url,
-    });
+  } catch (err) {
+    console.warn("fetchPayments error", err);
     setPayments([]);
   }
 }, []);
 
 const fetchTenantHistory = useCallback(async () => {
   try {
-    const token = localStorage.getItem("ACCESS_TOKEN");
-    if (!token) {
-      console.warn("No auth token - skipping fetchTenantHistory");
-      return;
-    }
-
     const res = await api.get("/tenant-history/");
-    console.log("✅ TENANT HISTORY API Response:", {
-      status: res.status,
-      data: res.data,
-      type: typeof res.data,
-      isArray: Array.isArray(res.data),
-    });
+    console.log("TENANT HISTORY FROM API 👉", res.data);
 
     const historyArray = Array.isArray(res.data)
       ? res.data
       : res.data?.results || res.data?.data || [];
 
-    console.log(`📊 Processed ${historyArray.length} tenant history records`);
-
+    console.log("TENANT HISTORY ARRAY:", historyArray);
     if (historyArray.length === 0) {
-      console.warn("⚠️ No tenant history records found");
-      setTenantHistory([]);
-      return;
+      console.warn('fetchTenantHistory: backend returned empty array — keeping local history');
+      return; // do not clear local tenantHistory when backend has none
     }
 
     const mappedHistory = historyArray.map((h: any) => {
-      // ✅ FIX: Safely handle tenant object
-      const tenantObj = typeof h.tenant === "object" && h.tenant !== null ? h.tenant : {};
-      // ✅ FIX: Safely handle room object
-      const roomObj = typeof h.room === "object" && h.room !== null ? h.room : {};
-
-      // ✅ FIX: Provide fallback values if tenant object is null/undefined
-      const tenantFirstName = tenantObj?.first_name || tenantObj?.firstName || "Unknown";
-      const tenantLastName = tenantObj?.last_name || tenantObj?.lastName || "";
+      const tenantObj = typeof h.tenant === "object" ? h.tenant : {};
+      const roomObj = typeof h.room === "object" ? h.room : {};
 
       const rawName =
         h.tenant_name ||
         h.tenantName ||
-        `${tenantFirstName} ${tenantLastName}`.trim();
+        `${tenantObj.first_name || ""} ${tenantObj.last_name || ""}`.trim();
+      const [firstFromRaw = "Unknown", ...restName] = rawName
+        .trim()
+        .split(" ");
+
+      const tenantFirstName =
+        tenantObj.first_name || tenantObj.firstName || firstFromRaw;
+      const tenantLastName =
+        tenantObj.last_name ||
+        tenantObj.lastName ||
+        restName.join(" ");
 
       const roomIdValue =
-        roomObj?.room_id ||
+        roomObj.room_id ||
         h.room_detail?.room_id ||
         h.room_id ||
         h.room_number ||
         h.room ||
-        roomObj?.id ||
+        roomObj.id ||
         "";
 
       const rawRoomType =
-        roomObj?.room_type || h.room_type || h.roomType || "single";
+        roomObj.room_type || h.room_type || h.roomType || "single";
       const roomTypeLower = String(rawRoomType).toLowerCase();
 
       return {
         id: String(h.id),
-        tenantName: rawName || "Unknown",
+        tenantName: `${tenantFirstName} ${tenantLastName}`.trim() || "Unknown",
         tenantId: String(
-          h.tenant_id || tenantObj?.id || h.tenantId || tenantObj?.pk || "",
+          h.tenant_id || tenantObj.id || h.tenantId || tenantObj.pk || "",
         ),
-        email: tenantObj?.email || h.email || "",
-        phone: tenantObj?.phone_no || tenantObj?.phone || h.phone || "",
+        email: tenantObj.email || h.email || "",
+        phone: tenantObj.phone_no || tenantObj.phone || h.phone || "",
         roomId: roomIdValue ? String(roomIdValue) : "",
         roomType: roomTypeLower.includes("double")
           ? "double"
@@ -738,9 +778,9 @@ const fetchTenantHistory = useCallback(async () => {
           ? "triple"
           : "single",
         isAC:
-          (roomObj?.ac_non_ac ||
-            roomObj?.ac ||
-            roomObj?.is_ac ||
+          (roomObj.ac_non_ac ||
+            roomObj.ac ||
+            roomObj.is_ac ||
             h.ac_non_ac ||
             "Non-AC") === "AC",
         joinDate: h.join_date || h.joinDate || "",
@@ -752,14 +792,17 @@ const fetchTenantHistory = useCallback(async () => {
       };
     });
 
-    setTenantHistory(mappedHistory);
-  } catch (err: any) {
-    console.error("❌ fetchTenantHistory ERROR:", {
-      status: err?.response?.status,
-      message: err?.message,
-      data: err?.response?.data,
-      url: err?.config?.url,
+    // Merge backend items with existing local history and dedupe by id
+    setTenantHistory((prev) => {
+      const combined = [...mappedHistory, ...prev];
+      const byId = new Map<string, any>();
+      for (const item of combined) {
+        if (!byId.has(item.id)) byId.set(item.id, item);
+      }
+      return Array.from(byId.values());
     });
+  } catch (err: any) {
+    console.warn("fetchTenantHistory error", err);
     setTenantHistory([]);
   }
 }, []);
@@ -788,40 +831,29 @@ const fetchTenantHistory = useCallback(async () => {
   }, [fetchRooms, fetchTenants, fetchPayments, fetchTenantHistory]);
 
 
-  // ✅ FIX 2: Link tenants to rooms - CRITICAL: Filter ONLY ACTIVE tenants!
+  // ✅ FIX 2: Link tenants to rooms - only depend on tenants, not rooms!
   useEffect(() => {
-    if (rooms.length === 0) return;
-
-    console.log(`\n🔗 LINKING TENANTS TO ROOMS:`);
-    const activeTenants = tenants.filter(t => t.isActive);
-    console.log(`   Total tenants: ${tenants.length}, Active: ${activeTenants.length}`);
+    if (rooms.length === 0 || tenants.length === 0) return;
 
     const updatedRooms = rooms.map((room) => {
-      // 🔑 CRITICAL: Filter BOTH conditions: isActive AND roomPk match
-      const roomTenants = activeTenants.filter(
-        (t) => t.roomPk === room.id || t.roomId === room.roomId
-      );
+      const roomTenants = tenants.filter((t) => t.roomPk === room.id);
 
-      const newIsOccupied = roomTenants.length > 0;
-      const oldIsOccupied = room.isOccupied;
-      const countChanged = roomTenants.length !== room.tenants.length;
-
-      // Log changes
-      if (countChanged || newIsOccupied !== oldIsOccupied) {
-        console.log(`   📍 Room ${room.roomId}:`);
-        console.log(`      Tenants: ${room.tenants.length} → ${roomTenants.length}`);
-        console.log(`      Status: ${oldIsOccupied ? "Occupied" : "Available"} → ${newIsOccupied ? "Occupied" : "Available"}`);
+      // ✅ Only update if tenants actually changed for this room
+      if (
+        roomTenants.length === room.tenants.length &&
+        roomTenants.every((t) => room.tenants.some((rt) => rt.id === t.id))
+      ) {
+        return room;
       }
 
       return {
         ...room,
         tenants: roomTenants,
-        isOccupied: newIsOccupied,
+        isOccupied: roomTenants.length > 0,
       };
     });
 
     setRooms(updatedRooms);
-    console.log(`✅ Room-tenant linking complete\n`);
   }, [tenants]);
 
 
@@ -850,25 +882,33 @@ const fetchTenantHistory = useCallback(async () => {
 
   const removeTenant = async (id: string, reason?: string) => {
     const tenant = tenants.find((t) => t.id === id);
-    if (!tenant) {
-      console.warn("❌ Tenant not found:", id);
+    if (!tenant) return;
+
+    const room = rooms.find((r) => r.id === tenant.roomPk || r.roomId === tenant.roomId);
+    
+    // ✅ If room is occupied, move to history instead of deleting
+    if (room && room.isOccupied) {
+      console.log("🔄 Room is occupied, moving tenant to history instead of deleting");
+      await moveTenantToHistory(id, reason || "Room vacated");
       return;
     }
 
-    const room = rooms.find((r) => r.id === tenant.roomPk || r.roomId === tenant.roomId);
-
-    console.log("🗑️ Removing tenant:", {
-      tenantId: id,
-      tenantName: `${tenant.firstName} ${tenant.lastName}`,
-      roomId: tenant.roomId,
-      roomOccupied: room?.isOccupied,
-    });
-
-    // Always move to history (don't permanently delete)
-    if (reason) {
-      await moveTenantToHistory(id, reason);
-    } else {
-      await moveTenantToHistory(id, "Tenant removed");
+    // ❌ If room is not occupied, directly delete tenant
+    console.log("🗑️ Deleting tenant from empty room");
+    setTenants((prev) => prev.filter((t) => t.id !== id));
+    
+    if (room) {
+      setRooms((prev) =>
+        prev.map((r) =>
+          r.id === room.id
+            ? {
+                ...r,
+                isOccupied: r.tenants.length > 1,
+                tenants: r.tenants.filter((t) => t.id !== id),
+              }
+            : r,
+        ),
+      );
     }
   };
 
@@ -970,13 +1010,9 @@ const moveTenantToHistory = async (
   tenantId: string,
   reason: string = "Room vacated",
 ) => {
-  console.log("=".repeat(60));
-  console.log("🔴 START: moveTenantToHistory");
-  console.log("=".repeat(60));
-
   const tenant = tenants.find((t) => t.id === tenantId);
   if (!tenant) {
-    console.error("❌ Tenant not found:", tenantId);
+    console.error("Tenant not found for history move:", tenantId);
     return;
   }
 
@@ -984,114 +1020,176 @@ const moveTenantToHistory = async (
     (r) => r.id === tenant.roomPk || r.roomId === tenant.roomId,
   );
 
-  console.log("📋 INPUT DATA:", {
-    tenantId: tenant.id,
+  console.log("🔄 Moving tenant to history:", {
+    tenantId,
     tenantName: `${tenant.firstName} ${tenant.lastName}`,
-    roomPk: tenant.roomPk,
     roomId: tenant.roomId,
-    roomBackendId: room?.id,
-    roomStatus: room?.isOccupied ? "Occupied" : "Available",
+    roomPk: tenant.roomPk,
+    reason,
   });
 
-  const todayDate = new Date().toISOString().split("T")[0];
+  const todayDate = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
 
-  // ============================================================
-  // STEP 1: Update Backend - Tenant inactive
-  // ============================================================
-  console.log("\n📤 STEP 1: Mark tenant inactive on backend...");
+  let backendOk = false;
+  
+  // ========== STEP 1: Move tenant on backend ==========
   try {
-    await api.patch(`/tenants/${tenantId}/`, { is_active: false });
-    console.log("✅ Tenant backend updated");
-  } catch (err: any) {
-    console.error("⚠️ Tenant update failed:", err?.response?.status);
-  }
+    console.log("📤 Attempting POST to /tenants/{id}/move/:", { tenantId });
+    const resp = await api.post(`/tenants/${tenantId}/move/`);
+    backendOk = true;
+    console.log("✅ Tenant moved via /tenants/{id}/move/", resp.data);
+  } catch (e: any) {
+    console.warn("❌ /tenants/{id}/move/ failed:", {
+      status: e?.response?.status,
+      data: e?.response?.data,
+      message: e?.message,
+    });
 
-  // ============================================================
-  // STEP 2: Update Backend - Room available
-  // ============================================================
-  console.log("\n📤 STEP 2: Mark room available on backend...");
-  if (room?.id) {
+    // Fallback: try /tenants/{id}/move-to-history/
     try {
-      await api.patch(`/rooms/${room.id}/`, { status: "Available" });
-      console.log("✅ Room backend updated");
-    } catch (err: any) {
-      console.error("⚠️ Room update failed:", err?.response?.status);
+      console.log("📤 Attempting fallback: /tenants/{id}/move-to-history/");
+      const resp = await api.post(`/tenants/${tenantId}/move-to-history/`);
+      backendOk = true;
+      console.log("✅ Tenant moved via /tenants/{id}/move-to-history/", resp.data);
+    } catch (e2: any) {
+      console.warn("❌ /tenants/{id}/move-to-history/ also failed:", {
+        status: e2?.response?.status,
+        data: e2?.response?.data,
+      });
     }
   }
 
-  // ============================================================
-  // STEP 3: Update Frontend - Tenant inactive
-  // ============================================================
-  console.log("\n🔄 STEP 3: Update frontend - tenant inactive...");
-  const newTenants = tenants.map((t) =>
-    t.id === tenantId ? { ...t, isActive: false } : t,
-  );
-  setTenants(newTenants);
-  console.log(`✅ Tenants updated. Active now: ${newTenants.filter(t => t.isActive).length}`);
-
-  // ============================================================
-  // STEP 4: Update Frontend - Room available & remove tenant
-  // ============================================================
-  console.log("\n🔄 STEP 4: Update frontend - room available...");
-  if (room) {
-    const newRooms = rooms.map((r) => {
-      if (r.id === room.id) {
-        const newRoomTenants = r.tenants.filter((t) => t.id !== tenantId);
-        const nowOccupied = newRoomTenants.length > 0;
-        console.log(`   Room ${r.roomId}: ${r.tenants.length} → ${newRoomTenants.length} tenants`);
-        console.log(`   Room ${r.roomId}: ${r.isOccupied ? "Occupied" : "Available"} → ${nowOccupied ? "Occupied" : "Available"}`);
-        return {
-          ...r,
-          tenants: newRoomTenants,
-          isOccupied: nowOccupied,
-        };
+  // ========== STEP 2: Update room as available ==========
+  if (room && room.id) {
+    try {
+      console.log("📤 Updating room to Available:", { 
+        roomId: room.id, 
+        roomPk: room.id,
+        currentStatus: room.isOccupied ? "Occupied" : "Available"
+      });
+      
+      // Try both field combinations since backend may use different names
+      const roomUpdatePayload = {
+        status: "Available",
+        is_occupied: false,
+        isOccupied: false,
+        record_status: "Active",
+      };
+      
+      // Try both endpoints
+      let roomUpdated = false;
+      try {
+        const resp = await api.patch(`/rooms/${room.id}/`, roomUpdatePayload);
+        console.log("✅ Room marked as available via PATCH /rooms/{id}/:", resp.data);
+        roomUpdated = true;
+      } catch (patchErr) {
+        console.warn("⚠️ PATCH /rooms/{id}/ failed, trying PUT:");
+        const resp = await api.put(`/rooms/${room.id}/`, {
+          ...roomUpdatePayload,
+          room_id: room.roomId,
+          room_type: "Single", // preserve existing fields
+          ac_non_ac: room.isAC ? "AC" : "Non-AC",
+          room_rent: room.rent,
+          facility: 1,
+        });
+        console.log("✅ Room marked as available via PUT /rooms/{id}/:", resp.data);
+        roomUpdated = true;
       }
-      return r;
-    });
-    setRooms(newRooms);
-    console.log("✅ Rooms updated");
+      
+      if (roomUpdated) {
+        console.log("✅ Room successfully updated on backend");
+      }
+    } catch (err: any) {
+      console.error("❌ Room update failed completely:", {
+        status: err?.response?.status,
+        data: err?.response?.data,
+        message: err?.message,
+      });
+    }
+  } else {
+    console.warn("⚠️ Room not found to update:", { roomId: tenant.roomId, roomPk: tenant.roomPk });
   }
 
-  // ============================================================
-  // STEP 5: Add to History
-  // ============================================================
-  console.log("\n📝 STEP 5: Add to history...");
-  const tenantNameDisplay = `${tenant.firstName} ${tenant.lastName}`.trim() || "Unknown";
-  const localEntry: TenantHistory = {
-    id: `local_${Date.now()}`,
-    tenantName: tenantNameDisplay,
-    tenantId: tenant.id,
-    email: tenant.email,
-    phone: tenant.phone,
-    roomId: room?.roomId || tenant.roomId || "",
-    roomType: room?.type || "single",
-    isAC: room?.isAC ?? false,
-    joinDate: tenant.joinDate,
-    leaveDate: todayDate,
-    checkoutDate: todayDate,
+  // ========== STEP 3: Create tenant-history record ==========
+  const historyPayload: any = {
+    tenant: tenantId,
+    tenant_id: tenantId,
+    room: room?.id,
+    room_id: room?.id,
+    join_date: tenant.joinDate,
+    leave_date: todayDate,
+    checkout_date: todayDate,
     reason,
-    totalRentPaid: 0,
+    total_rent_paid: 0,
     facilities: [],
   };
 
-  setTenantHistory((prev) => [localEntry, ...prev]);
-  console.log(`✅ Added ${tenantNameDisplay} to history`);
-
-  // ============================================================
-  // STEP 6: Sync Backend
-  // ============================================================
-  console.log("\n🔄 STEP 6: Sync with backend...");
-  try {
-    await new Promise(resolve => setTimeout(resolve, 300));
-    await Promise.all([fetchTenants(), fetchRooms(), fetchTenantHistory()]);
-    console.log("✅ Backend synced");
-  } catch (err: any) {
-    console.warn("⚠️ Sync failed:", err?.message);
+  const historyEndpoints = ["/tenant-history/", "/tenant_history/"];
+  for (const ep of historyEndpoints) {
+    try {
+      console.log(`📤 Attempting POST to ${ep}:`, historyPayload);
+      const resp = await api.post(ep, historyPayload);
+      backendOk = true;
+      console.log(`✅ Tenant history created via ${ep}`, resp.data);
+      break;
+    } catch (err: any) {
+      console.warn(`❌ POST ${ep} failed:`, {
+        status: err?.response?.status,
+        data: err?.response?.data,
+      });
+    }
   }
 
-  console.log("\n" + "=".repeat(60));
-  console.log("🟢 COMPLETE: moveTenantToHistory SUCCESS!");
-  console.log("=".repeat(60));
+  // ========== STEP 4: Update frontend state ==========
+  // Mark tenant inactive
+  setTenants((prev) =>
+    prev.map((t) =>
+      t.id === tenantId ? { ...t, isActive: false } : t,
+    ),
+  );
+
+  // Update room state
+  if (room) {
+    setRooms((prev) =>
+      prev.map((r) =>
+        r.id === room.id
+          ? { ...r, isOccupied: false, tenants: [] }
+          : r,
+      ),
+    );
+  }
+
+  // ========== STEP 5: Sync tenant history from backend ==========
+  if (backendOk) {
+    try {
+      await fetchTenantHistory();
+      console.log("✅ Fetched updated tenant history from backend");
+    } catch (err) {
+      console.warn("⚠️ Could not fetch updated tenant history:", err);
+    }
+  } else {
+    // If backend failed, add local entry only
+    console.warn("⚠️ No backend save succeeded; adding local entry only");
+    const localEntry: TenantHistory = {
+      id: `local_${Date.now()}`,
+      tenantName: `${tenant.firstName} ${tenant.lastName}`.trim() || "Unknown",
+      tenantId: tenant.id,
+      email: tenant.email,
+      phone: tenant.phone,
+      roomId: room?.roomId || tenant.roomId || "",
+      roomType: room?.type || "single",
+      isAC: room?.isAC ?? false,
+      joinDate: tenant.joinDate,
+      leaveDate: todayDate,
+      checkoutDate: todayDate,
+      reason,
+      totalRentPaid: 0,
+      facilities: [],
+    };
+    setTenantHistory((prev) => [localEntry, ...prev]);
+  }
+
+  console.log("✅ Tenant moved to history (all steps complete)");
 };
 
 

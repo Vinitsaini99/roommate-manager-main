@@ -130,34 +130,71 @@ const handleVerifyAll = (tenantId: string) => {
 
       {/* Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4">
-        <div className="stat-card flex items-center gap-3 md:gap-4">
-          <div className="h-10 w-10 md:h-12 md:w-12 rounded-xl bg-primary/10 flex items-center justify-center">
-            <FileText className="h-5 w-5 md:h-6 md:w-6 text-primary" />
-          </div>
-          <div>
-            <p className="text-xl md:text-2xl font-bold text-foreground">{activeTenants.length}</p>
-            <p className="text-xs md:text-sm text-muted-foreground">Total Tenants</p>
-          </div>
+             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4">
+
+      {/* TOTAL TENANTS */}
+      <div
+        className={`stat-card flex items-center gap-3 md:gap-4 cursor-pointer ${
+          filter === "all" ? "ring-2 ring-primary" : ""
+        }`}
+        onClick={() => setFilter("all")}
+      >
+        <div className="h-10 w-10 md:h-12 md:w-12 rounded-xl bg-primary/10 flex items-center justify-center">
+          <FileText className="h-5 w-5 md:h-6 md:w-6 text-primary" />
         </div>
-        <div className="stat-card flex items-center gap-3 md:gap-4">
-          <div className="h-10 w-10 md:h-12 md:w-12 rounded-xl bg-success/10 flex items-center justify-center">
-            <CheckCircle className="h-5 w-5 md:h-6 md:w-6 text-success" />
-          </div>
-          <div>
-            <p className="text-xl md:text-2xl font-bold text-success">{verifiedCount}</p>
-            <p className="text-xs md:text-sm text-muted-foreground">Verified</p>
-          </div>
-        </div>
-        <div className="stat-card flex items-center gap-3 md:gap-4">
-          <div className="h-10 w-10 md:h-12 md:w-12 rounded-xl bg-warning/10 flex items-center justify-center">
-            <Clock className="h-5 w-5 md:h-6 md:w-6 text-warning" />
-          </div>
-          <div>
-            <p className="text-xl md:text-2xl font-bold text-warning">{pendingCount}</p>
-            <p className="text-xs md:text-sm text-muted-foreground">Pending</p>
-          </div>
+        <div>
+          <p className="text-xl md:text-2xl font-bold text-foreground">
+            {activeTenants.length}
+          </p>
+          <p className="text-xs md:text-sm text-muted-foreground">
+            Total Tenants
+          </p>
         </div>
       </div>
+
+      {/* VERIFIED */}
+      <div
+        className={`stat-card flex items-center gap-3 md:gap-4 cursor-pointer ${
+          filter === "verified" ? "ring-2 ring-success" : ""
+        }`}
+        onClick={() => setFilter("verified")}
+      >
+        <div className="h-10 w-10 md:h-12 md:w-12 rounded-xl bg-success/10 flex items-center justify-center">
+          <CheckCircle className="h-5 w-5 md:h-6 md:w-6 text-success" />
+        </div>
+        <div>
+          <p className="text-xl md:text-2xl font-bold text-success">
+            {verifiedCount}
+          </p>
+          <p className="text-xs md:text-sm text-muted-foreground">
+            Verified
+          </p>
+        </div>
+      </div>
+
+  {/* PENDING */}
+  <div
+    className={`stat-card flex items-center gap-3 md:gap-4 cursor-pointer ${
+      filter === "pending" ? "ring-2 ring-warning" : ""
+    }`}
+    onClick={() => setFilter("pending")}
+  >
+    <div className="h-10 w-10 md:h-12 md:w-12 rounded-xl bg-warning/10 flex items-center justify-center">
+      <Clock className="h-5 w-5 md:h-6 md:w-6 text-warning" />
+    </div>
+    <div>
+      <p className="text-xl md:text-2xl font-bold text-warning">
+        {pendingCount}
+      </p>
+      <p className="text-xs md:text-sm text-muted-foreground">
+        Pending
+      </p>
+    </div>
+  </div>
+
+</div>
+      </div>
+
 
       {/* Filters */}
       <div className="flex flex-col gap-4">

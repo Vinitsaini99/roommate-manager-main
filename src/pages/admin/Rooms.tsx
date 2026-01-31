@@ -9,6 +9,11 @@ import { formatCurrency } from "@/utils/formatters";
 import { useRef, useEffect } from "react";
 import api from "@/api/api";
 
+// import { Room } from "@/contexts/DataContext";
+
+
+
+
 export default function AdminRooms() {
   const [searchQuery, setSearchQuery] = useState("");
   const [filter, setFilter] = useState<"all" | "available" | "occupied">("all");
@@ -16,30 +21,33 @@ export default function AdminRooms() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
   const cardRef = useRef<HTMLDivElement | null>(null);
-  const { rooms, tenants, fetchRooms, fetchTenants } = useData();
+const { rooms, tenants, fetchRooms, fetchTenants } = useData();
 
-  useEffect(() => {
-    fetchRooms();
-    fetchTenants();
-  }, [fetchRooms, fetchTenants]);
+useEffect(() => {
+  fetchRooms();
+  fetchTenants();
+}, [fetchRooms, fetchTenants]);
 
-  const getRoomNumber = (roomId?: string | number) => {
-    if (!roomId) return "—";
-    const room = rooms.find(r => String(r.id) === String(roomId) || String(r.roomId) === String(roomId));
-    return room?.roomId ?? "—";
-  };
+const getRoomNumber = (roomId?: string | number) => {
+  if (!roomId) return "—";
 
-  const filteredRooms = useMemo(() => {
-    return rooms.filter(room => {
-      const roomNum = room.roomId?.toString() || '';
-      const matchesSearch = roomNum.includes(searchQuery);
-      const matchesFilter =
-        filter === 'all' ||
-        (filter === 'available' && !room.isOccupied) ||
-        (filter === 'occupied' && room.isOccupied);
-      return matchesSearch && matchesFilter;
-    });
-  }, [rooms, searchQuery, filter]);
+  const room = rooms.find(r => String(r.id) === String(roomId) || String(r.roomId) === String(roomId));
+  return room?.roomId ?? "—";
+};
+
+ const filteredRooms = useMemo(() => {
+  return rooms.filter(room => {
+    const roomNum = room.roomId?.toString() || '';
+    const matchesSearch = roomNum.includes(searchQuery);
+    const matchesFilter =
+      filter === 'all' ||
+      (filter === 'available' && !room.isOccupied) ||
+      (filter === 'occupied' && room.isOccupied);
+    return matchesSearch && matchesFilter;
+  });
+}, [rooms, searchQuery, filter]);
+
+// console.log("filteredRooms",filteredRooms);
 
   const handleRoomClick = (room: Room) => {
     setSelectedRoom(room);
@@ -51,26 +59,116 @@ export default function AdminRooms() {
     fetchTenants();
   };
 
+
+  // const filteredRooms = useMemo(() => {
+  //   return rooms.filter(room => {
+  //     const matchesSearch = room.roomNumber.toString().includes(searchQuery);
+  //     const matchesFilter =
+  //       filter === "all" ||
+  //       (filter === "available" && !room.isOccupied) ||
+  //       (filter === "occupied" && room.isOccupied);
+  //     return matchesSearch && matchesFilter;
+  //   });
+  // }, [rooms, searchQuery, filter]);
+
+  // const handleRoomClick = (room: Room) => {
+  //   setSelectedRoom(room);
+  //   setIsModalOpen(true);
+  // };
+
+  // const handleAddNewRoom = () => {
+  //   setSelectedRoom(null);
+  //   setIsModalOpen(true);
+  // };
+
+//   useEffect(() => {
+//   fetchRooms();
+// }, []);
+
+
+// const fetchRooms = async () => {
+//   const res = await api.get("/rooms/");
+//   if (res.data.length === 0) {
+//     initializeRooms(20); // 👈 frontend fallback
+//     return;
+//   }
+//   setRooms(res.data.map(mapRoomFromApi));
+// };
+
+
+
+// const mapRoomFromApi = (r: any): Room => ({
+//   id: String(r.id),
+//   roomNumber: r.room_number ?? r.number ?? r.id,
+//   type: r.type ?? "single",
+//   isAC: r.ac ?? false,
+//   rent: Number(r.rent ?? 0),
+//   isOccupied: Boolean(r.room), // tenant linked
+//   tenants: [],
+// });
+
+
+// 
+
+
+// useEffect(() => {
+//   fetchRooms();
+// }, []);
+
   useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (
-        cardRef.current &&
-        !cardRef.current.contains(event.target as Node)
-      ) {
-        setActiveRoomId(null);
-      }
+  function handleClickOutside(event: MouseEvent) {
+    if (
+      cardRef.current &&
+      !cardRef.current.contains(event.target as Node)
+    ) {
+      setActiveRoomId(null); // 🔥 hide Edit
     }
+  }
 
-    if (activeRoomId) {
-      document.addEventListener("mousedown", handleClickOutside);
-    }
+  if (activeRoomId) {
+    document.addEventListener("mousedown", handleClickOutside);
+  }
 
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
-  }, [activeRoomId]);
+  return () => {
+    document.removeEventListener("mousedown", handleClickOutside);
+  };
+}, [activeRoomId]);
+
+
+
+// const addRoom = async (room: Omit<Room, "id">) => {
+//   const res = await api.post("/rooms/", {
+//     room_number: room.roomNumber,
+//     type: room.type,
+//     is_ac: room.isAC,
+//     rent: room.rent,
+//     is_occupied: room.isOccupied,
+//   });
+
+//   const savedRoom = mapRoomFromApi(res.data);
+//   setRooms(prev => [...prev, savedRoom]);
+// };
+
+// const updateRoom = async (id: string, updates: Partial<Room>) => {
+//   await api.put(`/rooms/${id}/`, {
+//     room_number: updates.roomNumber,
+//     type: updates.type,
+//     is_ac: updates.isAC,
+//     rent: updates.rent,
+//     is_occupied: updates.isOccupied,
+//   });
+
+//   setRooms(prev =>
+//     prev.map(r => (r.id === id ? { ...r, ...updates } : r))
+//   );
+// };
+
 
   return (
+
+
+
+    
     <div className="space-y-4 md:space-y-6 animate-fade-in">
       <div className="page-header flex flex-col gap-4">
         <div>
@@ -99,6 +197,22 @@ export default function AdminRooms() {
             className="pl-10"
           />
         </div>
+        {/* <div className="flex gap-2 overflow-x-auto pb-2">
+          {(["all", "available", "occupied"] as const).map((f) => (
+            <Button
+              key={f}
+              variant={filter === f ? "default" : "outline"}
+              size="sm"
+              onClick={() => setFilter(f)}
+              className={cn(
+                "whitespace-nowrap",
+                filter === f ? "gradient-primary" : ""
+              )}
+            >
+              {f.charAt(0).toUpperCase() + f.slice(1)}
+            </Button>
+          ))}
+        </div> */}
       </div>
 
       {/* Stats */}
@@ -151,7 +265,7 @@ export default function AdminRooms() {
         </div>
       </div>
 
-      {/* Room Cards Grid */}
+      {/* Room Cards Grid - Responsive: 1 col mobile, 2 tablet, 3-5 desktop */}
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 md:gap-4">
         {filteredRooms && filteredRooms.length > 0 ? (
           filteredRooms.map((room) => (
@@ -257,48 +371,49 @@ export default function AdminRooms() {
         )}
       </div>
 
-      {selectedRoom && (
-        <RoomModal
-          room={selectedRoom}
-          isOpen={isModalOpen}
-          onClose={() => setIsModalOpen(false)}
-          onSave={async (data) => {
-            try {
-              if (selectedRoom?.id) {
-                // ✅ FIXED: Correct payload for backend
-                const payload = {
-                  room_id: selectedRoom.roomId,
-                  room_type:
-                    data.type === "single"
-                      ? "Single"
-                      : data.type === "double"
-                      ? "Double"
-                      : "Triple",
-                  ac_non_ac: data.isAC ? "AC" : "Non-AC",
-                  room_rent: data.rent,
-                  facility: 1,
-                  remarks: "",
-                };
+ {selectedRoom && (
+  <RoomModal
+    room={selectedRoom}
+    isOpen={isModalOpen}
+    onClose={() => setIsModalOpen(false)}
+    onSave={async (data) => {
+  try {
+    if (selectedRoom?.id) {
+      const payload = {
+        room_id: selectedRoom.roomId,
+        room_type:
+          data.type === "single"
+            ? "Single"
+            : data.type === "double"
+            ? "Double"
+            : "Triple",
+        ac_non_ac: data.isAC ? "AC" : "Non-AC",
+        room_rent: data.rent,
+        facility: 1,
+        remarks: "",
+      };
 
-                console.log("📤 ROOM UPDATE PAYLOAD:", payload);
-                console.log("🔗 PATCH URL: /rooms/" + selectedRoom.id + "/");
+      console.log("✅ ROOM UPDATE PAYLOAD:", payload);
 
-                const res = await api.put(`/rooms/${selectedRoom.id}/`, payload);
-                console.log("✅ Room updated successfully:", res.data);
-              }
+      await api.put(`/rooms/${selectedRoom.id}/`, payload);
+    }
 
-              await fetchRooms();
-              setIsModalOpen(false);
-            } catch (error: any) {
-              console.error("❌ Room update error:", {
-                status: error?.response?.status,
-                data: error?.response?.data,
-                message: error?.message,
-              });
-            }
-          }}
-        />
-      )}
+    await fetchRooms();
+    setIsModalOpen(false);
+  } catch (error: any) {
+    console.error("❌ Room update error:", error?.response?.data || error.message);
+  }
+}}
+
+  />
+)}
+
+
+
+
+
+
+
     </div>
   );
 }
