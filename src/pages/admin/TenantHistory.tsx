@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 import React, { useState, useMemo, useEffect } from "react";
+=======
+import React, { useState } from "react";
+>>>>>>> 306546b424c047394fb6ab1bc06dfb375f70bdf3
 import {
   History,
   Search,
@@ -46,6 +50,7 @@ export default function AdminTenantHistory() {
   const [searchQuery, setSearchQuery] = useState("");
   const [isMovingTenant, setIsMovingTenant] = useState(false);
   const [selectedTenantId, setSelectedTenantId] = useState("");
+<<<<<<< HEAD
   const [selectedTenantData, setSelectedTenantData] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [confirmMove, setConfirmMove] = useState(false);
@@ -56,6 +61,14 @@ export default function AdminTenantHistory() {
   const tenant = entry.tenant
     ? tenantMap.get(String(entry.tenant))
     : null;
+=======
+  const [isLoading, setIsLoading] = useState(false);
+  const [confirmMove, setConfirmMove] = useState(false);
+
+  const activeTenants = tenants.filter((t) => t.isActive);
+  // Tenants that exist on backend will have numeric IDs (not local temporary ids)
+  const activeBackendTenants = activeTenants.filter((t) => /^\d+$/.test(String(t.id)));
+>>>>>>> 306546b424c047394fb6ab1bc06dfb375f70bdf3
 
   return {
     id: entry.id,
@@ -108,6 +121,7 @@ export default function AdminTenantHistory() {
   };
 };
 
+<<<<<<< HEAD
 
 
   
@@ -143,6 +157,11 @@ export default function AdminTenantHistory() {
 
   const room = rooms.find(
     (r) => String(r.id) === String(roomPk) // 🔥 ONLY PK MATCH
+=======
+  /* ================= FILTER ================= */
+  const filteredHistory = tenantHistory.filter((entry) =>
+    entry.tenantName.toLowerCase().includes(searchQuery.toLowerCase()),
+>>>>>>> 306546b424c047394fb6ab1bc06dfb375f70bdf3
   );
 
   return room?.roomId ?? "Unknown";
@@ -198,6 +217,7 @@ const roomKey = entry.roomId && entry.roomId !== "" ? entry.roomId : "__NO_ROOM_
       toast({
         title: "Tenant not on server",
         description: "This tenant exists only locally. Save to server before moving.",
+<<<<<<< HEAD
         variant: "destructive",
       });
       setIsMovingTenant(false);
@@ -211,10 +231,15 @@ const roomKey = entry.roomId && entry.roomId !== "" ? entry.roomId : "__NO_ROOM_
       toast({
         title: "Tenant not found",
         description: "Could not find the selected tenant.",
+=======
+>>>>>>> 306546b424c047394fb6ab1bc06dfb375f70bdf3
         variant: "destructive",
       });
+      setIsMovingTenant(false);
+      setSelectedTenantId("");
       return;
     }
+<<<<<<< HEAD
     
     setSelectedTenantData(tenant);
     setConfirmMove(true);
@@ -225,11 +250,28 @@ const roomKey = entry.roomId && entry.roomId !== "" ? entry.roomId : "__NO_ROOM_
       setIsLoading(true);
       if (!selectedTenantData) {
         throw new Error("Tenant data not found");
+=======
+
+    setConfirmMove(true);
+  };
+
+  const confirmAndMove = async () => {
+    try {
+      setIsLoading(true);
+      const selectedTenant = activeBackendTenants.find((t) => t.id === selectedTenantId);
+      
+      if (!selectedTenant) {
+        throw new Error("Tenant not found");
+>>>>>>> 306546b424c047394fb6ab1bc06dfb375f70bdf3
       }
 
       console.log("🚀 Starting tenant move operation:", {
         tenantId: selectedTenantId,
+<<<<<<< HEAD
         tenantName: `${selectedTenantData.firstName} ${selectedTenantData.lastName}`,
+=======
+        tenantName: `${selectedTenant.firstName} ${selectedTenant.lastName}`,
+>>>>>>> 306546b424c047394fb6ab1bc06dfb375f70bdf3
       });
 
       // Execute the move
@@ -246,6 +288,7 @@ const roomKey = entry.roomId && entry.roomId !== "" ? entry.roomId : "__NO_ROOM_
       console.log("📥 Refreshing tenant history...");
       await fetchTenantHistory();
       
+<<<<<<< HEAD
       // Reset dialog state
       setIsMovingTenant(false);
       setSelectedTenantId("");
@@ -263,6 +306,12 @@ const roomKey = entry.roomId && entry.roomId !== "" ? entry.roomId : "__NO_ROOM_
         description: err?.message || "Could not move tenant",
         variant: "destructive",
       });
+=======
+      // Final verification log
+      // console.log("✅ Refresh complete - room should now be available");
+      //   variant: "destructive",
+      // });
+>>>>>>> 306546b424c047394fb6ab1bc06dfb375f70bdf3
     } finally {
       setIsLoading(false);
     }
@@ -316,6 +365,7 @@ const roomKey = entry.roomId && entry.roomId !== "" ? entry.roomId : "__NO_ROOM_
                   </SelectTrigger>
                   <SelectContent>
                     {activeBackendTenants.length === 0 && (
+<<<<<<< HEAD
                       <SelectItem value="__no_tenants__" disabled>
                         No saved tenants available
                       </SelectItem>
@@ -323,15 +373,29 @@ const roomKey = entry.roomId && entry.roomId !== "" ? entry.roomId : "__NO_ROOM_
                     {activeBackendTenants
                       .filter((t) => t && String(t.id).trim() !== "")
                       .map((t) => {
+=======
+                      <SelectItem value="" disabled>
+                        No saved tenants available
+                      </SelectItem>
+                    )}
+                    {activeBackendTenants.map((t) => {
+>>>>>>> 306546b424c047394fb6ab1bc06dfb375f70bdf3
                       const room = rooms.find(
                         (r) =>
                           String(r.id) === String(t.roomPk) ||
                           String(r.roomId) === String(t.roomId),
                       );
+<<<<<<< HEAD
                       const roomKey = t.roomId || t.roomPk;
                       return (
                         <SelectItem key={t.id} value={String(t.id)}>
                           {t.firstName} {t.lastName} – Room {getRoomNumber(roomKey)}
+=======
+                      return (
+                        <SelectItem key={t.id} value={t.id}>
+                          {t.firstName} {t.lastName} – Room #{getRoomNumber(t.roomId)}{" "}
+                          {room?.isOccupied ? "🔴" : "🟢"}
+>>>>>>> 306546b424c047394fb6ab1bc06dfb375f70bdf3
                         </SelectItem>
                       );
                     })}
@@ -357,14 +421,29 @@ const roomKey = entry.roomId && entry.roomId !== "" ? entry.roomId : "__NO_ROOM_
               </div>
             ) : (
               <div className="space-y-4 pt-4">
+<<<<<<< HEAD
                 {selectedTenantData && (
+=======
+                {selectedTenantId && (
+>>>>>>> 306546b424c047394fb6ab1bc06dfb375f70bdf3
                   <>
                     <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
                       <p className="font-semibold mb-2">Confirm action:</p>
                       <p className="text-sm">
                         Moving{" "}
                         <span className="font-semibold">
+<<<<<<< HEAD
                           {selectedTenantData.firstName} {selectedTenantData.lastName}
+=======
+                          {
+                            activeBackendTenants.find((t) => t.id === selectedTenantId)
+                              ?.firstName
+                          }{" "}
+                          {
+                            activeBackendTenants.find((t) => t.id === selectedTenantId)
+                              ?.lastName
+                          }
+>>>>>>> 306546b424c047394fb6ab1bc06dfb375f70bdf3
                         </span>{" "}
                         to history will:
                       </p>
@@ -378,10 +457,14 @@ const roomKey = entry.roomId && entry.roomId !== "" ? entry.roomId : "__NO_ROOM_
                     <div className="flex justify-end gap-2">
                       <Button
                         variant="outline"
+<<<<<<< HEAD
                         onClick={() => {
                           setConfirmMove(false);
                           setSelectedTenantData(null);
                         }}
+=======
+                        onClick={() => setConfirmMove(false)}
+>>>>>>> 306546b424c047394fb6ab1bc06dfb375f70bdf3
                         disabled={isLoading}
                       >
                         Back
@@ -451,6 +534,18 @@ const roomKey = entry.roomId && entry.roomId !== "" ? entry.roomId : "__NO_ROOM_
   </Badge>
 </div>
 
+<<<<<<< HEAD
+=======
+          return (
+            <div key={entry.id} className="stat-card">
+              <div className="flex justify-between">
+                <div>
+                  <p className="font-semibold">{entry.tenantName}</p>
+                  <p className="text-sm text-muted-foreground">
+                    Room #{getRoomNumber(entry.roomId)}
+                  </p>
+                </div>
+>>>>>>> 306546b424c047394fb6ab1bc06dfb375f70bdf3
 
 
     
