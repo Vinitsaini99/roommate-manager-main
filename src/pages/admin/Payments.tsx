@@ -61,6 +61,9 @@ export default function AdminPayments() {
   } = useData();
   const { toast } = useToast();
 
+  // Get current year for dynamic display
+  const currentYear = new Date().getFullYear();
+
   const [searchQuery, setSearchQuery] = useState("");
   const [filterStatus, setFilterStatus] = useState<"all" | "paid" | "pending">(
     "all",
@@ -72,6 +75,9 @@ export default function AdminPayments() {
   const [prevReading, setPrevReading] = useState(0);
   const [currReading, setCurrReading] = useState(0);
 
+  // Filter active tenants with valid room assignments
+  const activeTenants = tenants.filter((t) => t.isActive && (t.roomId || t.roomPk));
+
   // Helpers to resolve tenant/room and bill breakdown
   const getTenantByBill = (bill: any) =>
     tenants.find((t) => t.id === bill.tenant);
@@ -80,6 +86,7 @@ export default function AdminPayments() {
     const tenant = getTenantByBill(bill);
     return rooms.find((r) => r.id === tenant?.roomPk);
   };
+
   const getRoomLabelByBill = (bill: any) => {
     const tenant = getTenantByBill(bill);
     const roomPk = tenant?.roomPk;
@@ -96,19 +103,18 @@ export default function AdminPayments() {
   };
 
   const getPrimaryTenantByBill = (bill: any) => {
-  const tenant = getTenantByBill(bill);
-  if (!tenant?.roomPk) return tenant;
+    const tenant = getTenantByBill(bill);
+    if (!tenant?.roomPk) return tenant;
 
-  return (
-    tenants.find(
-      (t) =>
-        String(t.roomPk) === String(tenant.roomPk) &&
-        t.isActive &&
-        t.phone
-    ) || tenant
-  );
-};
-
+    return (
+      tenants.find(
+        (t) =>
+          String(t.roomPk) === String(tenant.roomPk) &&
+          t.isActive &&
+          t.phone
+      ) || tenant
+    );
+  };
 
   const getRoomTenantsLabelByBill = (bill: any) => {
     const t = getTenantByBill(bill);
@@ -131,8 +137,6 @@ export default function AdminPayments() {
   const getUnits = (bill: any) => bill.current_reading - bill.previous_reading;
 
   const getElectricityAmount = (bill: any) => getUnits(bill) * bill.unit_charge;
-
-  const activeTenants = tenants.filter((t) => t.isActive);
 
   // Unique occupied rooms list for dropdown
   const roomOptions = React.useMemo(() => {
@@ -206,7 +210,6 @@ export default function AdminPayments() {
   const totalBill = (selectedRoom?.rent || 0) + electricityAmount;
 
   // ✅ Hide months that already have a bill for the selected room (any status)
-  const year = 2026;
   const usedMonthsForSelectedRoom = React.useMemo(() => {
     if (!selectedRoomPk) return new Set<string>();
 
@@ -215,13 +218,13 @@ export default function AdminPayments() {
       const t = tenants.find((tt) => tt.id === p.tenant);
       if (!t || String(t.roomPk) !== String(selectedRoomPk)) continue;
       const y =
-        p.year || (p.date_month ? new Date(p.date_month).getFullYear() : year);
-      if (y !== year) continue;
+        p.year || (p.date_month ? new Date(p.date_month).getFullYear() : currentYear);
+      if (y !== currentYear) continue;
       const m = (p.month || "").toLowerCase();
       if (m) used.add(m);
     }
     return used;
-  }, [selectedRoomPk, payments, tenants]);
+  }, [selectedRoomPk, payments, tenants, currentYear]);
 
   const getRoomNumber = (roomId?: string | number) => {
     if (!roomId) return "—";
@@ -287,7 +290,6 @@ export default function AdminPayments() {
     const electricityAmount = unitsUsed * settings.electricityRate;
     const totalAmount = (selectedRoom?.rent || 0) + electricityAmount;
     const monthIndex = months.indexOf(selectedMonth) + 1;
-    const year = 2026;
 
     // ❌ Block duplicate payment for same ROOM + MONTH + YEAR
     const hasExistingForRoomAndMonth = payments.some((p) => {
@@ -297,16 +299,16 @@ export default function AdminPayments() {
       if (!r || !selectedRoom) return false;
       return (
         r.id === selectedRoom.id &&
-        (p.month || formatMonth(selectedMonth, year)).toLowerCase() ===
+        (p.month || formatMonth(selectedMonth, currentYear)).toLowerCase() ===
           selectedMonth.toLowerCase() &&
-        (p.year || year) === year
+        (p.year || currentYear) === currentYear
       );
     });
 
     if (hasExistingForRoomAndMonth) {
       toast({
         title: "Payment already exists",
-        description: `Room ${selectedRoom.roomId} already has a payment recorded for ${selectedMonth} ${year}.`,
+        description: `Room ${selectedRoom.roomId} already has a payment recorded for ${selectedMonth} ${currentYear}.`,
         variant: "destructive",
       });
       return;
@@ -315,7 +317,7 @@ export default function AdminPayments() {
     addPayment({
       // ✅ Backend ElectricityBill fields only
       tenant: selectedTenant.id,
-      date_month: `2026-${String(monthIndex).padStart(2, "0")}-01`,
+      date_month: `${currentYear}-${String(monthIndex).padStart(2, "0")}-01`,
       previous_reading: prevReading,
       current_reading: currReading,
       unit_charge: settings.electricityRate,
@@ -324,7 +326,7 @@ export default function AdminPayments() {
 
       // (Optional UI helpers — backend will ignore because DataContext maps payload)
       month: selectedMonth,
-      year: year,
+      year: currentYear,
       status: "pending",
     });
 
@@ -343,13 +345,32 @@ export default function AdminPayments() {
     setCurrReading(0);
   };
 
-  const handleMarkAsPaid = (paymentId: string) => {
-    updatePayment(paymentId, { status: "paid" });
+ const handleMarkAsPaid = async (paymentId: string) => {
+  try {
+    await updatePayment(paymentId, {
+      status: "paid", // 👈 THIS FIXES 400
+    });
+
+    await fetchPayments();
+
     toast({
       title: "Payment updated",
       description: "Payment has been marked as paid.",
     });
-  };
+  } catch (err) {
+    toast({
+      title: "Update failed",
+      description: "Backend rejected the request",
+      variant: "destructive",
+    });
+  }
+};
+
+
+
+
+
+
 
   const handleSendReminder = (paymentId: string, tenantName: string) => {
     sendPaymentReminder(paymentId);
@@ -486,7 +507,7 @@ Thank you
                       )
                       .map((m) => (
                         <SelectItem key={m} value={m}>
-                          {m} {year}
+                          {m} {currentYear}
                         </SelectItem>
                       ))}
                   </SelectContent>
@@ -640,6 +661,7 @@ Thank you
             </p>
           </div>
         </div>
+          
       </div>
 
       {/* Filters */}
@@ -695,10 +717,13 @@ Thank you
                 const units = getUnits(bill);
                 const electricity = getElectricityAmount(bill);
                 const total = electricity + (room?.rent || 0);
-                const isPaid = false; // frontend-only for now
+                console.log("STATUS CHECK 👉", bill.status, bill.record_status);
+const isPaid = bill.status === "paid";
 
-                return (
-                  <tr key={bill.id}>
+
+
+return (
+  <tr key={bill.id}>
                     {/* 🔥 ROOM FIRST (with tenant count) */}
                     <td className="font-medium">{getRoomLabelByBill(bill)}</td>
 
@@ -711,26 +736,31 @@ Thank you
                     <td>{formatCurrency(total)}</td>
 
                     <td>
-                      <span
-                        className={cn(
-                          "status-badge text-xs",
-                          isPaid ? "status-paid" : "status-pending",
-                        )}
-                      >
-                        {isPaid ? "Paid" : "Pending"}
-                      </span>
+                     <span
+  className={cn(
+    "status-badge text-xs",
+    isPaid ? "status-paid" : "status-pending"
+  )}
+>
+  {isPaid ? "Paid" : "Pending"}
+</span>
+
+
                     </td>
 
                     <td>
   <div className="flex gap-2">
     {/* Mark Paid */}
-    <Button
-      size="sm"
-      variant="outline"
-      onClick={() => handleMarkAsPaid(bill.id)}
-    >
-      Mark Paid
-    </Button>
+  <Button
+  size="sm"
+  variant="outline"
+  disabled={isPaid}
+  onClick={() => handleMarkAsPaid(bill.id)}
+>
+  {isPaid ? "Paid" : "Mark Paid"}
+
+</Button>
+
 
     {/* 🔔 Send Reminder */}
     <Button
@@ -746,7 +776,7 @@ Thank you
           });
           return;
         }
-
+        
         const room = getRoomByBill(bill);
         const units = getUnits(bill);
         const electricity = getElectricityAmount(bill);

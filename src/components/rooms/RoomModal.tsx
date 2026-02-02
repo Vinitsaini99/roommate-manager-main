@@ -417,11 +417,17 @@ export default function RoomModal({
 
     try {
       // ✅ Ensure backend room type / AC / rent are in sync with wizard before creating tenants
-      await updateRoom(room.id, {
-        type: roomType,
-        isAC,
-        rent: customRent,
-      });
+      try {
+        await updateRoom(room.id, {
+          type: roomType,
+          isAC,
+          rent: customRent,
+        });
+        console.log("✅ Room updated successfully");
+      } catch (roomErr: any) {
+        console.error("⚠️ Room update failed, but continuing with tenant creation:", roomErr?.message);
+        // Don't fail here - room update is not critical
+      }
 
       const capacity = getRoomCapacity(roomType);
       const candidates = [tenant1, tenant2, tenant3].slice(0, capacity);
@@ -516,12 +522,18 @@ export default function RoomModal({
       toast({ title: "✅ Tenant(s) added + documents uploaded" });
       onClose();
     } catch (error: any) {
-      console.error("Error saving tenant:", error);
+      console.error("❌ Error saving tenant:", {
+        message: error?.message,
+        status: error?.response?.status,
+        responseData: error?.response?.data,
+        fullError: error
+      });
       toast({
         title: "Error",
         description:
-          error?.message ||
+          error?.response?.data?.detail ||
           error?.response?.data?.message ||
+          error?.message ||
           "Failed to add tenant. Please try again.",
         variant: "destructive",
       });

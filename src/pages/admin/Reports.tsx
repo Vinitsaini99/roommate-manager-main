@@ -7,7 +7,11 @@ import { formatCurrency } from '@/utils/formatters';
 export default function AdminReports() {
   const { payments, rooms, tenants } = useData();
 
-  // Monthly revenue data (will be mutated with real values)
+  // Get current year for dynamic display
+  const currentYear = new Date().getFullYear();
+
+  // Filter active tenants with valid room assignments
+  const activeTenants = tenants.filter(t => t.isActive && (t.roomId || t.roomPk));
   const monthlyData = [
     { month: 'Jan', revenue: 0, expected: 0 },
     { month: 'Feb', revenue: 0, expected: 0 },
@@ -157,7 +161,7 @@ export default function AdminReports() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Monthly Revenue Chart */}
         <div className="stat-card">
-          <h2 className="text-lg font-semibold text-foreground mb-6">Monthly Revenue (2024)</h2>
+          <h2 className="text-lg font-semibold text-foreground mb-6">Monthly Revenue ({currentYear})</h2>
           <div className="h-80">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={monthlyData}>
@@ -268,15 +272,15 @@ export default function AdminReports() {
           <div className="space-y-3">
             <div className="flex justify-between">
               <span className="text-muted-foreground">Active Tenants</span>
-              <span className="font-semibold text-foreground">{tenants.filter(t => t.isActive).length}</span>
+              <span className="font-semibold text-foreground">{activeTenants.length}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Documents Verified</span>
-              <span className="font-semibold text-success">{tenants.filter(t => t.documentsVerified).length}</span>
+              <span className="font-semibold text-success">{activeTenants.filter(t => t.documentsVerified).length}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Pending Verification</span>
-              <span className="font-semibold text-warning">{tenants.filter(t => !t.documentsVerified && t.isActive).length}</span>
+              <span className="font-semibold text-warning">{activeTenants.filter(t => !t.documentsVerified).length}</span>
             </div>
           </div>
         </div>

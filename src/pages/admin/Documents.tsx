@@ -19,7 +19,7 @@ export default function AdminDocuments() {
   const [uploadingTenantId, setUploadingTenantId] = useState<string | null>(null);
   const [pendingFiles, setPendingFiles] = useState<Record<string, { address?: File; id?: File }>>({});
 
-  const activeTenants = tenants.filter(t => t.isActive);
+  const activeTenants = tenants.filter(t => t.isActive && (t.roomId || t.roomPk));
 
   const makeDocUrl = (path?: string | null) => {
     if (!path) return undefined;
@@ -129,64 +129,70 @@ const handleVerifyAll = (tenantId: string) => {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4">
-        <div className="stat-card flex items-center gap-3 md:gap-4">
-          <div className="h-10 w-10 md:h-12 md:w-12 rounded-xl bg-primary/10 flex items-center justify-center">
-            <FileText className="h-5 w-5 md:h-6 md:w-6 text-primary" />
-          </div>
-          <div>
-            <p className="text-xl md:text-2xl font-bold text-foreground">{activeTenants.length}</p>
-            <p className="text-xs md:text-sm text-muted-foreground">Total Tenants</p>
-          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4">
+
+      {/* TOTAL TENANTS */}
+      <div
+        className={`stat-card flex items-center gap-3 md:gap-4 cursor-pointer ${
+          filter === "all" ? "ring-2 ring-primary" : ""
+        }`}
+        onClick={() => setFilter("all")}
+      >
+        <div className="h-10 w-10 md:h-12 md:w-12 rounded-xl bg-primary/10 flex items-center justify-center">
+          <FileText className="h-5 w-5 md:h-6 md:w-6 text-primary" />
         </div>
-        <div className="stat-card flex items-center gap-3 md:gap-4">
-          <div className="h-10 w-10 md:h-12 md:w-12 rounded-xl bg-success/10 flex items-center justify-center">
-            <CheckCircle className="h-5 w-5 md:h-6 md:w-6 text-success" />
-          </div>
-          <div>
-            <p className="text-xl md:text-2xl font-bold text-success">{verifiedCount}</p>
-            <p className="text-xs md:text-sm text-muted-foreground">Verified</p>
-          </div>
-        </div>
-        <div className="stat-card flex items-center gap-3 md:gap-4">
-          <div className="h-10 w-10 md:h-12 md:w-12 rounded-xl bg-warning/10 flex items-center justify-center">
-            <Clock className="h-5 w-5 md:h-6 md:w-6 text-warning" />
-          </div>
-          <div>
-            <p className="text-xl md:text-2xl font-bold text-warning">{pendingCount}</p>
-            <p className="text-xs md:text-sm text-muted-foreground">Pending</p>
-          </div>
+        <div>
+          <p className="text-xl md:text-2xl font-bold text-foreground">
+            {activeTenants.length}
+          </p>
+          <p className="text-xs md:text-sm text-muted-foreground">
+            Total Tenants
+          </p>
         </div>
       </div>
 
-      {/* Filters */}
-      <div className="flex flex-col gap-4">
-        <div className="relative w-full">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search by tenant name..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-10"
-          />
+      {/* VERIFIED */}
+      <div
+        className={`stat-card flex items-center gap-3 md:gap-4 cursor-pointer ${
+          filter === "verified" ? "ring-2 ring-success" : ""
+        }`}
+        onClick={() => setFilter("verified")}
+      >
+        <div className="h-10 w-10 md:h-12 md:w-12 rounded-xl bg-success/10 flex items-center justify-center">
+          <CheckCircle className="h-5 w-5 md:h-6 md:w-6 text-success" />
         </div>
-        <div className="flex gap-2 overflow-x-auto pb-2">
-          {(['all', 'pending', 'verified'] as const).map((f) => (
-            <Button
-              key={f}
-              variant={filter === f ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => setFilter(f)}
-              className={cn(
-                'whitespace-nowrap',
-                filter === f ? 'gradient-primary' : ''
-              )}
-            >
-              {f.charAt(0).toUpperCase() + f.slice(1)}
-            </Button>
-          ))}
+        <div>
+          <p className="text-xl md:text-2xl font-bold text-success">
+            {verifiedCount}
+          </p>
+          <p className="text-xs md:text-sm text-muted-foreground">
+            Verified
+          </p>
         </div>
       </div>
+
+  {/* PENDING */}
+  <div
+    className={`stat-card flex items-center gap-3 md:gap-4 cursor-pointer ${
+      filter === "pending" ? "ring-2 ring-warning" : ""
+    }`}
+    onClick={() => setFilter("pending")}
+  >
+    <div className="h-10 w-10 md:h-12 md:w-12 rounded-xl bg-warning/10 flex items-center justify-center">
+      <Clock className="h-5 w-5 md:h-6 md:w-6 text-warning" />
+    </div>
+    <div>
+      <p className="text-xl md:text-2xl font-bold text-warning">
+        {pendingCount}
+      </p>
+      <p className="text-xs md:text-sm text-muted-foreground">
+        Pending
+      </p>
+    </div>
+  </div>
+
+</div>
+
 
       {/* Tenant Documents List */}
       <div className="space-y-3 md:space-y-4">
@@ -224,7 +230,7 @@ const handleVerifyAll = (tenantId: string) => {
                       onClick={() => handleVerifyAll(tenant.id)}
                       className="gradient-primary"
                     >
-                      <Check className="h-4 w-4 mr-1" />
+                      <Check className="h-4 w-4 mr-1" /> 
                       Verify All
                     </Button>
                   )}

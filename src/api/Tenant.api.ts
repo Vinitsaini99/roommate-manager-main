@@ -24,14 +24,14 @@ export const updateTenantAPI = async (id: string, data: Partial<Tenant>) => {
 };  
 // MOVE tenant to history
 export const moveTenantToHistoryAPI = async (id: string) => {
-  const res = await api.post(`/tenants/${id}/move-to-history/`);
+  const res = await api.post(`/tenant-history/${id}/move/`);
   return res.data;
 };
 
 // TENANT HISTORY APIs
 export const getTenantHistoryAPI = async (): Promise<TenantHistory[]> => {
   try {
-    const res = await api.get("/tenant_history/");
+    const res = await api.get("/tenant-history/");
     return res.data;
   } catch (err) {
     console.warn("tenant_history endpoint not available, using local data");
@@ -42,7 +42,7 @@ export const getTenantHistoryAPI = async (): Promise<TenantHistory[]> => {
 export const saveTenantHistoryAPI = async (data: TenantHistory) => {
   try {
     console.log("📤 Saving to tenant_history:", data);
-    const res = await api.post("/tenant_history/", data);
+    const res = await api.post("/tenant-history/", data);
     console.log("✅ Saved to backend:", res.data);
     return res.data;
   } catch (err: any) {
@@ -53,11 +53,11 @@ export const saveTenantHistoryAPI = async (data: TenantHistory) => {
 
 // VERIFY document
 export const verifyDocumentAPI = async (tenantId: string, docId: string) => {
-  const res = await api.post(`/tenants/${tenantId}/verify-document/${docId}/`);
+  const res = await api.put(`/tenants/${tenantId}/documents/${docId}/verify/`);
   return res.data;
 };
 // VERIFY all documents
 export const verifyAllDocumentsAPI = async (tenantId: string) => {
-  const res = await api.post(`/tenants/${tenantId}/verify-all-documents/`);
+  const res = await api.put(`/tenants/${tenantId}/documents/verify-all/`);
   return res.data;
 };

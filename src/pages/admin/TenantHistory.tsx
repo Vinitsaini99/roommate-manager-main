@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import {
   History,
   Search,
@@ -31,6 +31,7 @@ import { useToast } from "@/hooks/use-toast";
 import { formatCurrency, formatDate } from "@/utils/formatters";
 import { downloadTenantPDF } from "@/utils/tenantPdfGenerator";
 
+
 export default function AdminTenantHistory() {
   const {
     tenantHistory,
@@ -40,117 +41,230 @@ export default function AdminTenantHistory() {
     fetchRooms,
     fetchTenantHistory,
   } = useData();
-
+  
   const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState("");
   const [isMovingTenant, setIsMovingTenant] = useState(false);
-  const [isMoveLoading, setIsMoveLoading] = useState(false);
+  const [selectedTenantId, setSelectedTenantId] = useState("");
+  const [selectedTenantData, setSelectedTenantData] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [confirmMove, setConfirmMove] = useState(false);
+  const [selectedRoomPk, setSelectedRoomPk] = useState<string>("all");
 
-  // 🔥 ROOM based selection
-  const [selectedRoomPk, setSelectedRoomPk] = useState("");
 
-  const activeTenants = tenants.filter((t) => t.isActive);
+ const resolveTenantForPDF = (entry: any) => {
+  const tenant = entry.tenant
+    ? tenantMap.get(String(entry.tenant))
+    : null;
 
-  /* ================= ROOM NUMBER ================= */
-  const getRoomNumber = (roomId?: string | number) => {
-    if (!roomId) return "—";
-    const room = rooms.find(
-      (r) =>
-        String(r.id) === String(roomId) ||
-        String(r.roomId) === String(roomId),
-    );
-    return room?.roomId ?? String(roomId);
+  return {
+    id: entry.id,
+
+    // ✅ NAME
+    firstName: entry.firstName || tenant?.firstName || "",
+    lastName: entry.lastName || tenant?.lastName || "",
+
+    // ✅ CONTACT (history > tenant > fallback)
+    email: entry.email || tenant?.email || "N/A",
+    phone: entry.phone || tenant?.phone || "N/A",
+
+    // ✅ ADDRESS (🔥 THIS FIXES YOUR ISSUE)
+    city:
+      entry.city ||
+      tenant?.city ||
+      "N/A",
+
+    state:
+      entry.state ||
+      tenant?.state ||
+      "N/A",
+
+    pincode:
+      entry.pincode ||
+      tenant?.pincode ||
+      "N/A",
+
+    landmark:
+      entry.landmark ||
+      tenant?.landmark ||
+      "N/A",
+
+    // ✅ ID / MONEY
+    aadhaarNumber:
+      entry.aadhaarNumber ||
+      tenant?.aadhaarNumber ||
+      "N/A",
+
+    tokenMoney:
+      entry.tokenMoney ??
+      tenant?.tokenMoney ??
+      0,
+
+    // ✅ ROOM / DATES
+    roomId: entry.roomId,
+    joinDate: entry.joinDate,
+    leaveDate: entry.leaveDate,
+    isActive: false,
   };
+};
 
-  /* ================= ROOM OPTIONS (same as Payments) ================= */
-  const roomOptions = useMemo(() => {
-    const roomPkSet = new Set<string>();
-    const options: {
-      roomPk: string;
-      roomIdLabel: string;
-      occupants: number;
-    }[] = [];
 
-    for (const t of activeTenants) {
-      if (!t.roomPk) continue;
-      if (roomPkSet.has(String(t.roomPk))) continue;
 
-      const room = rooms.find((r) => String(r.id) === String(t.roomPk));
-      const occupants = activeTenants.filter(
-        (x) => String(x.roomPk) === String(t.roomPk),
-      ).length;
+  
+  const activeTenants = tenants.filter((t) => t.isActive);
+  const tenantMap = useMemo(() => {
+  const map = new Map<string, any>();
+  tenants.forEach((t) => {
+    map.set(String(t.id), t);
+  });
+  return map;
+  }, [tenants]);
+  
+  
 
-      options.push({
-        roomPk: String(t.roomPk),
-        roomIdLabel: room?.roomId || "ROOM",
-        occupants,
-      });
+  // Exclude tenants that are already moved to history and keep only backend-saved tenants
+  const historyTenantIds = useMemo(() => {
+    const s = new Set<string>();
+    tenantHistory.forEach((h: any) => {
+      if (h.tenant) s.add(String(h.tenant));
+    });
+    return s;
+  }, [tenantHistory]);
 
-      roomPkSet.add(String(t.roomPk));
-    }
+  // Tenants that exist on backend will have numeric IDs (not local temporary ids)
+  // and must NOT already be present in tenantHistory
+  const activeBackendTenants = activeTenants.filter(
+    (t) => /^\d+$/.test(String(t.id)) && !historyTenantIds.has(String(t.id)),
+  );
+  
+  /* ================= ROOM NUMBER ================= */
+  const getRoomNumber = (roomPk?: string | number) => {
+  if (!roomPk) return "No Room";
 
-    return options;
-  }, [activeTenants, rooms]);
-
-  /* ================= TENANTS IN SELECTED ROOM ================= */
-  const tenantsInSelectedRoom = useMemo(() => {
-    if (!selectedRoomPk) return [];
-    return activeTenants.filter(
-      (t) => String(t.roomPk) === String(selectedRoomPk),
-    );
-  }, [activeTenants, selectedRoomPk]);
-
-  // backend ko ek tenantId chahiye
-  const selectedTenant = tenantsInSelectedRoom[0];
-
-  /* ================= FILTER ================= */
-  const filteredHistory = tenantHistory.filter((entry) =>
-    entry.tenantName.toLowerCase().includes(searchQuery.toLowerCase()),
+  const room = rooms.find(
+    (r) => String(r.id) === String(roomPk) // 🔥 ONLY PK MATCH
   );
 
+  return room?.roomId ?? "Unknown";
+};
+
+  
+const getTenantName = (entry: any) => {
+  if (entry.firstName || entry.lastName) {
+    return `${entry.firstName ?? ""} ${entry.lastName ?? ""}`.trim();
+  }
+
+  if (entry.tenant) {
+    const tenant = tenantMap.get(String(entry.tenant));
+    if (tenant) {
+      return `${tenant.firstName} ${tenant.lastName ?? ""}`.trim();
+    }
+  }
+
+  return "Former Tenant";
+};
+
+
+
+/* ================= FILTER ================= */
+  const filteredHistory = tenantHistory.filter((entry) => {
+    const fullName = getTenantName(entry).toLowerCase();
+    return fullName.includes(searchQuery.toLowerCase());
+  });
+  const groupedHistory = filteredHistory.reduce(
+    (acc: Record<string, typeof filteredHistory>, entry) => {
+const roomKey = entry.roomId && entry.roomId !== "" ? entry.roomId : "__NO_ROOM__";
+  
+  if (!acc[roomKey]) {
+  acc[roomKey] = [];
+  }
+  
+  acc[roomKey].push(entry);
+  return acc;
+  },
+  {},
+  );
+  
+
+  useEffect(() => {
+  console.log("Tenant history sample:", tenantHistory[0]);
+}, [tenantHistory]);
   /* ================= MOVE TENANT ================= */
   const handleMoveTenant = async () => {
-    if (!selectedTenant) {
+    if (!selectedTenantId) return;
+
+    // Prevent moving tenants that are only local (no backend ID)
+    if (!/^\d+$/.test(String(selectedTenantId))) {
       toast({
-        title: "Error",
-        description: "No active tenant found in selected room",
+        title: "Tenant not on server",
+        description: "This tenant exists only locally. Save to server before moving.",
+        variant: "destructive",
+      });
+      setIsMovingTenant(false);
+      setSelectedTenantId("");
+      return;
+    }
+    
+    // Capture tenant data BEFORE moving (so we can display it in confirmation)
+    const tenant = activeBackendTenants.find((t) => t.id === selectedTenantId);
+    if (!tenant) {
+      toast({
+        title: "Tenant not found",
+        description: "Could not find the selected tenant.",
         variant: "destructive",
       });
       return;
     }
-
-    console.log("🔄 Starting move tenant process for:", selectedTenant.id);
-    setIsMoveLoading(true);
-
+    
+    setSelectedTenantData(tenant);
+    setConfirmMove(true);
+  };
+  
+  const confirmAndMove = async () => {
     try {
-      // Call moveTenantToHistory - it handles everything internally
-      console.log("📤 Calling moveTenantToHistory...");
-      await moveTenantToHistory(selectedTenant.id, "Tenant moved from history dialog");
-      
-      // Wait a moment for state updates
-      await new Promise(resolve => setTimeout(resolve, 500));
+      setIsLoading(true);
+      if (!selectedTenantData) {
+        throw new Error("Tenant data not found");
+      }
 
-      // Refresh data
-      console.log("📥 Refreshing data...");
-      await Promise.all([fetchRooms(), fetchTenantHistory()]);
-
-      console.log("✅ Move complete!");
-      toast({
-        title: "✅ Tenant moved",
-        description: "Tenant moved to history & room marked as available",
+      console.log("🚀 Starting tenant move operation:", {
+        tenantId: selectedTenantId,
+        tenantName: `${selectedTenantData.firstName} ${selectedTenantData.lastName}`,
       });
 
+      // Execute the move
+      await moveTenantToHistory(selectedTenantId);
+      
+      // Wait a moment for backend to process
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Refresh rooms first to see updated status
+      console.log("📥 Refreshing rooms...");
+      await fetchRooms();
+      
+      // Then refresh history
+      console.log("📥 Refreshing tenant history...");
+      await fetchTenantHistory();
+      
+      // Reset dialog state
       setIsMovingTenant(false);
-      setSelectedRoomPk("");
-      setIsMoveLoading(false);
-    } catch (err: any) {
-      console.error("❌ Error moving tenant:", err);
+      setSelectedTenantId("");
+      setSelectedTenantData(null);
+      setConfirmMove(false);
+      
       toast({
-        title: "❌ Error",
-        description: err?.message || "Failed to move tenant",
+        title: "Tenant moved to history",
+        description: `${selectedTenantData.firstName} ${selectedTenantData.lastName} moved successfully`,
+      });
+    } catch (err: any) {
+      console.error("Move failed:", err);
+      toast({
+        title: "Move failed",
+        description: err?.message || "Could not move tenant",
         variant: "destructive",
       });
-      setIsMoveLoading(false);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -168,7 +282,14 @@ export default function AdminTenantHistory() {
           <p className="page-subtitle">Records of all previous tenants</p>
         </div>
 
-        <Dialog open={isMovingTenant} onOpenChange={setIsMovingTenant}>
+        <Dialog open={isMovingTenant} onOpenChange={(open) => {
+          setIsMovingTenant(open);
+          if (!open) {
+            setSelectedTenantId("");
+            setSelectedTenantData(null);
+            setConfirmMove(false);
+          }
+        }}>
           <DialogTrigger asChild>
             <Button variant="outline">
               <UserMinus className="h-4 w-4 mr-2" />
@@ -178,60 +299,105 @@ export default function AdminTenantHistory() {
 
           <DialogContent className="max-w-md">
             <DialogHeader>
-              <DialogTitle>Move Tenant to History</DialogTitle>
+              <DialogTitle>
+                {confirmMove ? "Confirm Move" : "Move Tenant to History"}
+              </DialogTitle>
             </DialogHeader>
 
-            <div className="space-y-4 pt-4">
-              <Select
-                value={selectedRoomPk}
-                onValueChange={setSelectedRoomPk}
-                disabled={isMoveLoading}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select room..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {roomOptions.map((r) => (
-                    <SelectItem key={r.roomPk} value={r.roomPk}>
-                      {r.roomIdLabel} ({r.occupants} tenant
-                      {r.occupants > 1 ? "s" : ""})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            {!confirmMove ? (
+              <div className="space-y-4 pt-4">
+                <Select
+                  value={selectedTenantId}
+                  onValueChange={setSelectedTenantId}
+                  disabled={isLoading}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select tenant..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {activeBackendTenants.length === 0 && (
+                      <SelectItem value="__no_tenants__" disabled>
+                        No saved tenants available
+                      </SelectItem>
+                    )}
+                    {activeBackendTenants
+                      .filter((t) => t && String(t.id).trim() !== "")
+                      .map((t) => {
+                      const room = rooms.find(
+                        (r) =>
+                          String(r.id) === String(t.roomPk) ||
+                          String(r.roomId) === String(t.roomId),
+                      );
+                      const roomKey = t.roomId || t.roomPk;
+                      return (
+                        <SelectItem key={t.id} value={String(t.id)}>
+                          {t.firstName} {t.lastName} – Room {getRoomNumber(roomKey)}
+                        </SelectItem>
+                      );
+                    })}
+                  </SelectContent>
+                </Select>
 
-              {selectedTenant && (
-                <div className="p-3 rounded-lg bg-muted/50 border border-border">
-                  <p className="text-sm text-muted-foreground">Selected Tenant</p>
-                  <p className="font-medium">
-                    {selectedTenant.firstName} {selectedTenant.lastName}
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {selectedTenant.email}
-                  </p>
+                <div className="flex justify-end gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => setIsMovingTenant(false)}
+                    disabled={isLoading}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    onClick={handleMoveTenant}
+                    disabled={!selectedTenantId || isLoading}
+                  >
+                    {isLoading ? "Moving..." : "Next"}
+                  </Button>
                 </div>
-              )}
-
-              <div className="flex justify-end gap-2">
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setIsMovingTenant(false);
-                    setSelectedRoomPk("");
-                  }}
-                  disabled={isMoveLoading}
-                >
-                  Cancel
-                </Button>
-                <Button 
-                  variant="destructive" 
-                  onClick={handleMoveTenant}
-                  disabled={!selectedTenant || isMoveLoading}
-                >
-                  {isMoveLoading ? "Moving..." : "Move"}
-                </Button>
               </div>
-            </div>
+            ) : (
+              <div className="space-y-4 pt-4">
+                {selectedTenantData && (
+                  <>
+                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                      <p className="font-semibold mb-2">Confirm action:</p>
+                      <p className="text-sm">
+                        Moving{" "}
+                        <span className="font-semibold">
+                          {selectedTenantData.firstName} {selectedTenantData.lastName}
+                        </span>{" "}
+                        to history will:
+                      </p>
+                      <ul className="text-sm mt-2 space-y-1">
+                        <li>✓ Mark tenant as inactive</li>
+                        <li>✓ Free up the room</li>
+                        <li>✓ Save to backend permanently</li>
+                      </ul>
+                    </div>
+
+                    <div className="flex justify-end gap-2">
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          setConfirmMove(false);
+                          setSelectedTenantData(null);
+                        }}
+                        disabled={isLoading}
+                      >
+                        Back
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        onClick={confirmAndMove}
+                        disabled={isLoading}
+                      >
+                        {isLoading ? "Moving..." : "Confirm Move"}
+                      </Button>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
           </DialogContent>
         </Dialog>
       </div>
@@ -265,100 +431,104 @@ export default function AdminTenantHistory() {
         />
       </div>
 
+
+
+
       {/* HISTORY LIST */}
-      <div className="space-y-4">
-        {filteredHistory.map((entry) => {
-          const roomTypeLabel =
-            entry.roomType?.toLowerCase() === "single"
-              ? "Single Bed"
-              : entry.roomType?.toLowerCase() === "double"
-              ? "Double Bed"
-              : "Triple Bed";
+     {Object.entries(groupedHistory).map(([roomId, entries]) => (
+  <div key={roomId} className="space-y-3">
+    
+    {/* 🏠 ROOM HEADER */}
+   <div className="flex items-center justify-between bg-muted/60 rounded-lg px-4 py-2">
+  <h3 className="font-semibold text-lg flex items-center gap-2">
+    <Home className="h-4 w-4" />
+    {roomId === "__NO_ROOM__"
+      ? "No Room"
+      : `Room #${getRoomNumber(roomId)}`}
+  </h3>
+  <Badge variant="secondary">
+    {entries.length} past tenant{entries.length > 1 ? "s" : ""}
+  </Badge>
+</div>
 
-          return (
-            <div key={entry.id} className="stat-card">
-              <div className="flex justify-between">
-                <div>
-                  {/* ROOM PRIMARY */}
-                  <p className="font-semibold">
-                    ROOM-{getRoomNumber(entry.roomId)}
-                  </p>
-                  {/* tenant secondary */}
-                  <p className="text-sm text-muted-foreground">
-                    {entry.tenantName}
-                  </p>
-                </div>
 
-                <div className="flex gap-2 items-center">
-                  <Badge variant="outline">{roomTypeLabel}</Badge>
-                  <Badge variant={entry.isAC ? "default" : "secondary"}>
-                    {entry.isAC ? "AC" : "Non-AC"}
-                  </Badge>
 
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    onClick={() => {
-                      const [firstName, ...rest] =
-                        entry.tenantName.split(" ");
-                      downloadTenantPDF(
-                        {
-                          id: entry.id,
-                          firstName,
-                          lastName: rest.join(" "),
-                          roomId: entry.roomId,
-                          isActive: false,
-                        } as any,
-                        rooms.find(
-                          (r) =>
-                            String(r.roomId) === String(entry.roomId) ||
-                            String(r.id) === String(entry.roomId),
-                        ),
-                      );
-                      toast({ title: "PDF Downloaded" });
-                    }}
-                  >
-                    <Download className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
+    
 
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
-                <div>
-                  <p className="text-xs text-muted-foreground">Join Date</p>
-                  <p>{formatDate(entry.joinDate)}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Leave Date</p>
-                  <p>{formatDate(entry.leaveDate)}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">
-                    Total Rent Paid
-                  </p>
-                  <p className="text-success">
-                    {formatCurrency(entry.totalRentPaid)}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Facilities</p>
-                  <p>
-                    {Array.isArray(entry.facilities)
-                      ? entry.facilities.join(", ")
-                      : "—"}
-                  </p>
-                </div>
-              </div>
+    {/* 👤 TENANTS OF THIS ROOM */}
+    {entries.map((entry) => {
+      const roomTypeLabel =
+        entry.roomType?.toLowerCase() === "single"
+          ? "Single Bed"
+          : entry.roomType?.toLowerCase() === "double"
+          ? "Double Bed"
+          : "Triple Bed";
+
+      return (
+        <div key={entry.id} className="stat-card ml-4">
+          <div className="flex justify-between">
+            <div>
+              <p className="font-semibold">
+               {getTenantName(entry)}
+              </p>
+              <p className="text-sm text-muted-foreground">
+                Joined: {formatDate(entry.joinDate)} • Left:{" "}
+                {formatDate(entry.leaveDate)}
+              </p>
             </div>
-          );
-        })}
 
-        {filteredHistory.length === 0 && (
-          <div className="stat-card text-center py-10">
-            No history records found
+            <div className="flex gap-2 items-center">
+              <Badge variant="outline">{roomTypeLabel}</Badge>
+              <Badge variant={entry.isAC ? "default" : "secondary"}>
+                {entry.isAC ? "AC" : "Non-AC"}
+              </Badge>
+
+             <Button
+  size="icon"
+  variant="ghost"
+  onClick={() => {
+    const tenantForPDF = resolveTenantForPDF(entry);
+
+    downloadTenantPDF(
+      tenantForPDF as any,
+      rooms.find(
+        (r) =>
+          String(r.roomId) === String(entry.roomId) ||
+          String(r.id) === String(entry.roomId),
+      ),
+    );
+
+    toast({ title: "PDF Downloaded" });
+  }}
+>
+  <Download className="h-4 w-4" />
+</Button>
+
+
+            </div>
           </div>
-        )}
-      </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
+            <div>
+              <p className="text-xs text-muted-foreground">Total Rent Paid</p>
+              <p className="text-success">
+                {formatCurrency(entry.totalRentPaid)}
+              </p>
+            </div>
+
+            {/* {entry.remarks && (
+              <div>
+                <p className="text-xs text-muted-foreground">Remarks</p>
+                <p className="text-sm">{entry.remarks}</p>
+              </div>
+            )} */}
+          </div>
+        </div>
+      );
+    })}
+  </div>
+))}
+
     </div>
   );
 }

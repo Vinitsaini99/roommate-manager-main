@@ -1,11 +1,15 @@
 import axios from "axios";
 
-const BACKEND =
-  import.meta.env.VITE_API_URL || "https://albenuspeter.pythonanywhere.com/";
+const BACKEND = import.meta.env.VITE_API_URL || "http://192.168.1.11:8000/";
+
+console.info("[api] using backend:", BACKEND);
 
 const api = axios.create({
   baseURL: BACKEND,
-  timeout: 1500000,
+  timeout: 15000,
+  headers: {
+    "Content-Type": "application/json",
+  },
 });
 
 /* ===================== REQUEST ===================== */
@@ -18,13 +22,10 @@ api.interceptors.request.use((config) => {
     url.includes("/login/") || url.includes("/token/");
 
   if (token && !isAuthEndpoint) {
-    // Check if it's a tenant token
     if (token.startsWith("TENANT_")) {
-      // For tenant requests, include tenant ID in headers
       config.headers!["X-Tenant-ID"] = tenantId || "";
       config.headers!.Authorization = `Bearer ${token}`;
     } else {
-      // For admin JWT tokens
       config.headers!.Authorization = `Bearer ${token}`;
     }
   }
@@ -36,14 +37,17 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (res) => res,
   (error) => {
-    const status = error?.response?.status;
-    const url = error?.config?.url || "";
+    console.error("[api] request failed", {
+      url: error?.config?.url,
+      status: error?.response?.status,
+      message: error?.message,
+      responseData: error?.response?.data,
+    });
 
-    const isAuthEndpoint =
-      url.includes("/login/") || url.includes("/token/");
-
-    if (status === 401 && !isAuthEndpoint) {
-      console.warn("🔐 Token expired → logout");
+    if (
+      error?.response?.status === 401 &&
+      !error?.config?.url?.includes("/login/")
+    ) {
       localStorage.removeItem("ACCESS_TOKEN");
       localStorage.removeItem("REFRESH_TOKEN");
       localStorage.removeItem("rentease_user");

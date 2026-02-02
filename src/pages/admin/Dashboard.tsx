@@ -27,6 +27,11 @@ export default function AdminDashboard() {
   const navigate = useNavigate();
   const { toast } = useToast();
 
+  // Get current month/year for dynamic filtering
+  const now = new Date();
+  const currentMonth = now.toLocaleString('en-IN', { month: 'long' });
+  const currentYear = now.getFullYear();
+
   // const [roomCount, setRoomCount] = useState(settings.totalRooms);
 
   const totalRooms = rooms.length;
@@ -38,12 +43,12 @@ export default function AdminDashboard() {
   const pendingPayments = payments.filter(p => p.status === 'pending');
   
   const monthlyRevenue = paidPayments
-    .filter(p => p.month === 'May' && p.year === 2024)
+    .filter(p => p.month === currentMonth && p.year === currentYear)
     .reduce((sum, p) => sum + p.totalAmount, 0);
 
   const monthlyElectricity = paidPayments
-    .filter(p => p.month === 'May' && p.year === 2024)
-    .reduce((sum, p) => sum + p.electricityAmount, 0);
+    .filter(p => p.month === currentMonth && p.year === currentYear)
+    .reduce((sum, p) => sum + p.electricityAmount, 0); 
   
   const expectedRevenue = rooms
     .filter(r => r.isOccupied)
@@ -283,9 +288,9 @@ export default function AdminDashboard() {
       </div>
 
       {/* Recent Tenants & Pending Verifications */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
+      <div className="grid grid-cols-1 gap-4 md:gap-6">
         {/* Tenant List */}
-        <div className="stat-card">
+        <div className="stat-card w-full">
           <div className="flex items-center justify-between mb-4 md:mb-6">
             <h2 className="text-base md:text-lg font-semibold text-foreground">Recent Tenants</h2>
             <Badge variant="outline" className="text-xs">{totalTenants} Total</Badge>
@@ -303,39 +308,47 @@ export default function AdminDashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {tenants.filter(t => t.isActive).slice(0, 5).map((tenant) => {
-                    const room = rooms.find(r => r.roomId === tenant.roomId);
-                    return (
-                      <tr key={tenant.id}>
-                        <td>
-                          <div className="flex items-center gap-2 md:gap-3">
-                            <div className="h-7 w-7 md:h-8 md:w-8 rounded-full gradient-primary flex items-center justify-center">
-                              <span className="text-xs font-medium text-primary-foreground">
-                                {tenant.firstName.charAt(0)}
-                              </span>
+                  {tenants
+                    .filter(t => t.isActive && (t.roomId || t.roomPk))
+                    .slice(0, 5)
+                    .map((tenant) => {
+                      const room = rooms.find(r => 
+                        String(r.id) === String(tenant.roomPk) || 
+                        String(r.roomId) === String(tenant.roomId)
+                      );
+                      const displayRoomId = tenant.roomId || tenant.roomPk || "—";
+                      
+                      return (
+                        <tr key={tenant.id}>
+                          <td>
+                            <div className="flex items-center gap-2 md:gap-3">
+                              <div className="h-7 w-7 md:h-8 md:w-8 rounded-full gradient-primary flex items-center justify-center">
+                                <span className="text-xs font-medium text-primary-foreground">
+                                  {tenant.firstName.charAt(0)}
+                                </span>
+                              </div>
+                              <div>
+                                <p className="font-medium text-foreground text-sm">
+                                  {tenant.firstName} {tenant.lastName}
+                                </p>
+                                <p className="text-xs text-muted-foreground hidden sm:block">{tenant.email}</p>
+                              </div>
                             </div>
-                            <div>
-                              <p className="font-medium text-foreground text-sm">
-                                {tenant.firstName} {tenant.lastName}
-                              </p>
-                              <p className="text-xs text-muted-foreground hidden sm:block">{tenant.email}</p>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="font-medium text-sm">#{tenant.roomId}</td>
-                        <td>
-                          <span className="text-xs text-muted-foreground">
-                            {getRoomTypeLabel(room?.type || 'single')} • {room?.isAC ? 'AC' : 'Non-AC'}
-                          </span>
-                        </td>
-                        <td>
-                          <span className={`status-badge text-xs ${tenant.documentsVerified ? 'status-verified' : 'status-pending'}`}>
-                            {tenant.documentsVerified ? 'Verified' : 'Pending'}
-                          </span>
-                        </td>
-                      </tr>
-                    );
-                  })}
+                          </td>
+                          <td className="font-medium text-sm">{displayRoomId}</td>
+                          <td>
+                            <span className="text-xs text-muted-foreground">
+                              {getRoomTypeLabel(room?.type || 'single')} • {room?.isAC ? 'AC' : 'Non-AC'}
+                            </span>
+                          </td>
+                          <td>
+                            <span className={`status-badge text-xs ${tenant.documentsVerified ? 'status-verified' : 'status-pending'}`}>
+                              {tenant.documentsVerified ? 'Verified' : 'Pending'}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
                 </tbody>
               </table>
             </div>
@@ -343,7 +356,7 @@ export default function AdminDashboard() {
         </div>
 
         {/* Pending Verifications */}
-        <div className="stat-card">
+        {/* <div className="stat-card">
           <div className="flex items-center justify-between mb-4 md:mb-6">
             <h2 className="text-base md:text-lg font-semibold text-foreground">Pending Verifications</h2>
             <Badge variant="destructive" className="text-xs">{pendingVerifications.length} Pending</Badge>
@@ -386,7 +399,7 @@ export default function AdminDashboard() {
               ))}
             </div>
           )}
-        </div>
+        </div> */}
       </div>
     </div>
   );
