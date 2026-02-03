@@ -8,6 +8,12 @@ import React, {
 } from "react";
 import api from "@/api/api";
 
+import type { State, City} from "@/api/location.api";
+// ❌ import type { fetchStates }
+import { fetchStates, fetchCitiesByState } from "@/api/location.api";
+
+
+
 
 export interface Tenant {
   id: string;
@@ -16,8 +22,11 @@ export interface Tenant {
   email: string;
   phone: string;
   landmark: string;
-  city: string;
-  state: string;
+  city: number | string;     // 👈 backend ID
+  state: number | string;    // 👈 backend ID
+  
+  cityName?: string;         // ✅ for UI
+  stateName?: string; 
   pincode: string;
   aadhaarNumber: string;
   tokenMoney: number;
@@ -43,7 +52,7 @@ export interface Document {
 }
 
 export interface Room {
- id: string;
+  id: string;
   roomId: string; // 👈 backend ka room_id
   type: "single" | "double" | "triple";
   isAC: boolean;
@@ -57,8 +66,8 @@ interface CreateTenantPayload {
   lastName: string;
   email: string;
   phone: string;
-  city: string;
-  state: string;
+  state: number | null;   // ✅ numeric FK ID
+  city: number | null;    // ✅ numeric FK ID
   pincode: string;
   aadhaarNumber: string;
   tokenMoney: number;
@@ -70,7 +79,7 @@ interface CreateTenantPayload {
 // DataContext.tsx
 export interface Payment {
   id: string;
-
+  
   tenant: string;          // FK
   date_month: string;      // YYYY-MM-DD
   month?: string;          // For display (e.g., 'May')
@@ -79,12 +88,12 @@ export interface Payment {
   totalAmount?: number;    // Same as amount
   units?: number;          // Units used (current - previous reading)
   electricityAmount?: number; // Electricity cost
-   record_status?: "Paid" | "Pending" | "Active";
-
+  record_status?: "Paid" | "Pending" | "Active";
+  
   previous_reading: number;
   current_reading: number;
   unit_charge: number;
-
+  
   status: 'paid' | 'pending';
   reminder_sent?: boolean;
   remarks?: string;
@@ -98,14 +107,14 @@ export interface TenantHistory {
   id: string;
   tenant?: number;
   room?: number | null;
-
+  
   firstName?: string;
   lastName?: string;
-
+  
   roomId?: string;   // "" allowed
   roomType?: string;
   isAC?: boolean;
-
+  
   joinDate?: string;
   leaveDate?: string;
   totalRentPaid?: number;
@@ -170,6 +179,7 @@ const defaultSettings: Settings = {
   },
 };
 
+
 const mapRoomFromApi = (r: any): Room => {
   const acValue = String(r.ac_non_ac ?? r.ac ?? r.is_ac ?? "").toLowerCase();
   const isACRoom = acValue === "ac" || acValue === "a/c" || r.isAC === true || r.is_ac === true;
@@ -199,43 +209,48 @@ const mapRoomFromApi = (r: any): Room => {
   };
 };
 
-const mapTenantFromApi = (t: any): Tenant => ({
-  id: String(t.id),
-  firstName: t.first_name ?? t.firstName ?? "",
-  lastName: t.last_name ?? t.lastName ?? "",
-  email: t.email ?? "",
-  phone: t.phone_no || t.phone || "",
+const mapTenantFromApi = (t: any): Tenant => {
+  // Get state/city IDs from backend (might be numeric or strings)
+  const stateId = Number(t.state);
+  const cityId = Number(t.city);
 
-  // Room identifiers (both are used in UI lookups)
-  roomId: t.room_detail?.room_id || t.room_id || "",
-  roomPk: t.room ? String(t.room) : t.roomPk ? String(t.roomPk) : undefined,
+  return {
+    id: String(t.id),
+    firstName: t.first_name ?? t.firstName ?? "",
+    lastName: t.last_name ?? t.lastName ?? "",
+    email: t.email ?? "",
+    phone: t.phone_no || t.phone || "",
 
-  documents: t.documents ?? [],
-  documentsVerified:
-    t.documents_verified ??
-    t.documentsVerified ??
-    t.is_documents_verified ??
-    false,
-  joinDate: t.join_date ?? t.joinDate ?? "",
-  isActive: t.is_active ?? t.isActive ?? true,
+    // Room identifiers (both are used in UI lookups)
+    roomId: t.room_detail?.room_id || t.room_id || "",
+    roomPk: t.room ? String(t.room) : t.roomPk ? String(t.roomPk) : undefined,
 
-  // Tenant address / identity details
-  landmark: t.landmark ?? "",
-  city: t.city ?? "",
-  state: t.state ?? "",
-  pincode: t.pincode ?? "",
-  aadhaarNumber: t.aadhar_no ?? t.aadhaar_no ?? t.aadhaarNumber ?? "",
+    documents: t.documents ?? [],
+    documentsVerified:
+      t.documents_verified ??
+      t.documentsVerified ??
+      t.is_documents_verified ??
+      false,
+    joinDate: t.join_date ?? t.joinDate ?? "",
+    isActive: t.is_active ?? t.isActive ?? true,
 
-  // Token / security deposit
-  tokenMoney: Number(t.token_money ?? t.token ?? t.tokenMoney ?? 0),
+    // Tenant address / identity details
+    landmark: t.landmark ?? "",
+    city: !isNaN(cityId) ? cityId : (t.city ?? ""),         // numeric ID if valid, else fallback
+    state: !isNaN(stateId) ? stateId : (t.state ?? ""),     // numeric ID if valid, else fallback
+    cityName: t.city_name ?? t.cityName ?? "",  // display name if backend provides
+    stateName: t.state_name ?? t.stateName ?? "",  // display name if backend provides
+    pincode: t.pincode ?? "",
+    aadhaarNumber: t.aadhar_no ?? t.aadhaar_no ?? t.aadhaarNumber ?? "",
 
-  // Document URLs (Django file fields commonly named like this)
-  addressDocUrl: t.address_doc ?? t.addressDocUrl ?? undefined,
-  idProofUrl: t.id_proof ?? t.idProofUrl ?? undefined,
-});
+    // Token / security deposit
+    tokenMoney: Number(t.token_money ?? t.token ?? t.tokenMoney ?? 0),
 
-
-
+    // Document URLs (Django file fields commonly named like this)
+    addressDocUrl: t.address_doc ?? t.addressDocUrl ?? undefined,
+    idProofUrl: t.id_proof ?? t.idProofUrl ?? undefined,
+  };
+};
 
 const mapPaymentFromApi = (p: any): Payment => {
   const dateMonth = p.date_month || "";
@@ -270,6 +285,56 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [tenantHistory, setTenantHistory] = useState<TenantHistory[]>([]);
   const [settings, setSettings] = useState<Settings>(defaultSettings);
 
+  // ✅ Cache for state/city mapping
+  const [statesMap, setStatesMap] = useState<Map<number, string>>(new Map());
+  const [citiesMap, setCitiesMap] = useState<Map<number, string>>(new Map());
+
+  // ✅ Helper to enrich tenant with state/city names
+  const enrichTenantWithNames = async (tenant: Tenant): Promise<Tenant> => {
+    try {
+      let stateNameResolved = tenant.stateName;
+      let cityNameResolved = tenant.cityName;
+
+      // If no names, try to fetch from backend
+      if (!stateNameResolved && tenant.state) {
+        const stateId = Number(tenant.state);
+        if (!isNaN(stateId)) {
+          if (statesMap.has(stateId)) {
+            stateNameResolved = statesMap.get(stateId) || "";
+          } else {
+            // Fetch states and cache
+            const { fetchStates } = await import("@/api/location.api");
+            const states = await fetchStates();
+            const stateMap = new Map(states.map((s) => [s.id, s.name]));
+            setStatesMap(stateMap);
+            stateNameResolved = stateMap.get(stateId) || "";
+          }
+        }
+      }
+
+      if (!cityNameResolved && tenant.city) {
+        const cityId = Number(tenant.city);
+        if (!isNaN(cityId)) {
+          if (citiesMap.has(cityId)) {
+            cityNameResolved = citiesMap.get(cityId) || "";
+          } else {
+            // For now, just cache if we have it
+            cityNameResolved = "";
+          }
+        }
+      }
+
+      return {
+        ...tenant,
+        stateName: stateNameResolved,
+        cityName: cityNameResolved,
+      };
+    } catch (error) {
+      console.warn("Failed to enrich tenant with location names:", error);
+      return tenant;
+    }
+  };
+
   const createTenant = async (data: CreateTenantPayload): Promise<Tenant> => {
     try {
       const token = localStorage.getItem("ACCESS_TOKEN");
@@ -284,7 +349,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         roomId = Number(roomId);
       }
 
-      // ✅ FIXED: Don't send state/city - backend expects FK IDs, not strings
+      // ✅ FIXED: Send state/city to backend
       const payload: any = {
         first_name: data.firstName,
         last_name: data.lastName,
@@ -296,17 +361,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
         aadhaar_no: data.aadhaarNumber,
         token: data.tokenMoney,
         token_money: data.tokenMoney,
-        remarks: data.remarks,
+         remarks: data.remarks,
         room: roomId,
         room_id: roomId,
         join_date: data.joinDate || new Date().toISOString().split("T")[0],
+        state: data.state,
+        city: data.city,
       };
-
-      // ⚠️ REMOVED: state and city fields cause "Expected pk value" error
-      // Backend expects these as Foreign Key IDs (numbers), not strings
-      // If you need to save state/city, ask backend team to:
-      // 1. Change them to CharField instead of FK, OR
-      // 2. Provide /states/ and /cities/ endpoints with IDs
 
       console.log("[createTenant] Sending payload:", JSON.stringify(payload, null, 2));
      const res = await api.post("/tenants/", payload);
@@ -332,27 +393,6 @@ await fetchRooms();
       return created;
     } catch (error: any) {
       console.error("createTenant error:", error);
-=======
-      const initializeRooms = async (totalRooms: number) => {
-        // 1️⃣ Rooms create API
-        await api.post("/api/rooms/initialize/", {
-          total_rooms: totalRooms,
-        });
-
-        // 2️⃣ Fresh rooms fetch
-        const res = await api.get("/api/rooms/");
-
-        // 3️⃣ Update rooms state (THIS makes cards show)
-        setRooms(res.data);
-
-        // 4️⃣ Update settings
-        setSettings((prev) => ({
-          ...prev,
-          totalRooms: totalRooms,
-        }));
-      };
-
->>>>>>> 306546b424c047394fb6ab1bc06dfb375f70bdf3
       const status = error?.response?.status;
       // Session expired
       if (status === 401) {
@@ -434,7 +474,6 @@ await fetchRooms();
       const createdRooms: string[] = [];
       const failures: Array<{ room: number; status?: number; data?: any; message: string }> = [];
 
-<<<<<<< HEAD
       for (let i = 1; i <= count; i++) {
         // Try multiple payload shapes to be compatible with different backends
         const payloadVariants: any[] = [
@@ -898,7 +937,6 @@ useEffect(() => {
     window.addEventListener("rentease:auth-changed", handler);
     return () => window.removeEventListener("rentease:auth-changed", handler);
   }, [fetchRooms, fetchTenants, fetchPayments, fetchTenantHistory]);
-
 
   // ✅ FIX 2: Link tenants to rooms - only depend on tenants, not rooms!
   useEffect(() => {

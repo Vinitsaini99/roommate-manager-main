@@ -87,19 +87,23 @@ function AppRoutes() {
   );
 }
 
+const AppWithProviders = () => (
+  <AuthProvider>
+    <TooltipProvider>
+      <Toaster />
+      <Sonner />
+      <BrowserRouter>
+        <AppRoutes />
+      </BrowserRouter>
+    </TooltipProvider>
+  </AuthProvider>
+);
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
-      <DataProvider>
-    <AuthProvider>
-        <TooltipProvider>
-          <Toaster />
-          <Sonner />
-          <BrowserRouter>
-            <AppRoutes />
-          </BrowserRouter>
-        </TooltipProvider>
-    </AuthProvider>
-      </DataProvider>
+    <DataProvider>
+      <AppWithProviders />
+    </DataProvider>
   </QueryClientProvider>
 );
 

@@ -202,9 +202,10 @@ const handleVerifyAll = (tenantId: string) => {
           onChange={(e) => setSearchQuery(e.target.value)}
           className="pl-10"
         />
+      </div>
+    </div>
 
-
-      {/* Tenant Documents List */}
+    {/* Tenant Documents List */}
       <div className="space-y-3 md:space-y-4">
         {filteredTenants.map((tenant) => (
           <div key={tenant.id} className="stat-card">

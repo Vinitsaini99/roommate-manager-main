@@ -1,10 +1,11 @@
 // src/pages/admin/Tenants.tsx
 import React, { useEffect, useMemo, useState } from "react";
-import { Pencil, Plus, User as UserIcon } from "lucide-react";
+import { Pencil, Plus, User as UserIcon, Download } from "lucide-react";
 import api from "@/api/api";
 import { useData, type Room, type Tenant } from "@/contexts/DataContext";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
+import { downloadTenantPDF } from "@/utils/tenantPdfGenerator";
 import {
   Dialog,
   DialogContent,
@@ -33,6 +34,8 @@ const emptyTenantForm: TenantFormData = {
   pincode: "",
   aadhaarNumber: "",
   tokenMoney: 0,
+  stateId: undefined,  // backend numeric ID
+  cityId: undefined,   // backend numeric ID
 };
 
 function getRoomTypeLabel(type: string) {
@@ -55,11 +58,15 @@ function tenantToForm(t: Tenant): TenantFormData {
     email: t.email ?? "",
     phone: t.phone ?? "",
     landmark: t.landmark ?? "",
-    city: t.city ?? "",
-    state: t.state ?? "",
+    // Pass numeric IDs as strings for form to lookup and pre-select
+    city: String(t.city ?? ""),
+    state: String(t.state ?? ""),
     pincode: t.pincode ?? "",
     aadhaarNumber: t.aadhaarNumber ?? "",
     tokenMoney: Number(t.tokenMoney ?? 0),
+    // Pre-populate numeric IDs if they're available
+    stateId: typeof t.state === "number" ? t.state : undefined,
+    cityId: typeof t.city === "number" ? t.city : undefined,
   };
 }
 
@@ -143,7 +150,7 @@ export default function AdminTenants() {
     setForm(emptyTenantForm);
     setSelectedRoomPk("");
     setIsDialogOpen(true);
-  };
+  }; 
 
   const openEdit = (tenant: Tenant) => {
     setMode("edit");
@@ -180,36 +187,69 @@ export default function AdminTenants() {
 
     setIsSaving(true);
     try {
+      // Clean phone number
+      const cleanPhone = String(form.phone || "").replace(/\D/g, "");
+
       if (mode === "add") {
         await createTenant({
-          ...form,
+          firstName: form.firstName,
+          lastName: form.lastName,
+          email: form.email,
+          phone: cleanPhone,
+          state: form.stateId || null,
+          city: form.cityId || null,
+          pincode: form.pincode || "",
+          aadhaarNumber: form.aadhaarNumber || "",
           tokenMoney: Number(form.tokenMoney ?? 0),
           remarks: "",
-          roomId: selectedRoomPk, // backend FK
+          roomId: selectedRoomPk,
           joinDate: new Date().toISOString().split("T")[0],
         });
       } else {
         if (!editingTenantId) return;
 
-        // Mirror createTenant payload keys for backend compatibility
-        const payload: any = {
-          first_name: form.firstName,
-          last_name: form.lastName,
-          email: form.email,
-          phone_no: form.phone,
-          phone: form.phone,
-          landmark: form.landmark,
-          city: form.city,
-          state: form.state,
-          pincode: form.pincode,
-          aadhar_no: form.aadhaarNumber,
-          aadhaar_no: form.aadhaarNumber,
-          token: Number(form.tokenMoney ?? 0),
-          token_money: Number(form.tokenMoney ?? 0),
-          room: selectedRoomPk,
-        };
+        // Clean phone number (remove spaces and formatting)
+        const cleanPhone = String(form.phone || "").replace(/\D/g, "");
 
-        await api.patch(`/tenants/${editingTenantId}/`, payload);
+        // Payload for editing - send state_id and city_id when available
+        const payload = {
+  first_name: form.firstName,
+  last_name: form.lastName,
+  email: form.email,
+
+  // ✅ backend expects this
+  phone: cleanPhone,
+
+  landmark: form.landmark || "",
+  pincode: form.pincode || "",
+  aadhaar_no: form.aadhaarNumber || "",
+
+  // ✅ backend expects `token`, NOT token_money
+  token: Number(form.tokenMoney ?? 0),
+
+  // ✅ FK names
+  room: Number(selectedRoomPk),
+  state: form.stateId ?? null,
+  city: form.cityId ?? null,
+};
+
+console.log("FINAL PATCH payload", payload);
+await api.patch(`/tenants/${editingTenantId}/`, payload);
+
+
+        // Add state and city IDs if available
+        // if (form.stateId) {
+        //   // payload.state = form.stateId;
+        //   payload.state_id = form.stateId;
+        // }
+        // if (form.cityId) {
+        //   // payload.city = form.cityId;
+        //   payload.city_id = form.cityId;
+        // }
+
+        console.log("Saving tenant payload:", payload);
+        const response = await api.patch(`/tenants/${editingTenantId}/`, payload);
+        console.log("Tenant updated successfully:", response.data);
       }
 
       await fetchRooms();
@@ -231,6 +271,34 @@ export default function AdminTenants() {
         variant: "destructive",
       });
       setIsSaving(false);
+    }
+  };
+
+  const handleDownloadPDF = async () => {
+    if (mode === "edit" && editingTenantId) {
+      const tenant = tenants.find((t) => t.id === editingTenantId);
+      if (tenant) {
+        const room = getRoomForTenant(tenant);
+        try {
+          await downloadTenantPDF(tenant, room || undefined);
+          toast({
+            title: "✅ PDF Downloaded",
+            description: `${tenant.firstName} ${tenant.lastName}'s details downloaded`,
+          });
+        } catch (err) {
+          console.error("PDF download error:", err);
+          toast({
+            title: "❌ PDF Download Failed",
+            description: "Failed to generate PDF",
+            variant: "destructive",
+          });
+        }
+      } else {
+        toast({
+          title: "❌ Tenant not found",
+          variant: "destructive",
+        });
+      }
     }
   };
 
@@ -377,18 +445,50 @@ export default function AdminTenants() {
                     detailsRoomGroup.tenants.map((t) => (
                       <div
                         key={t.id}
-                        className="flex items-center justify-between gap-3 p-3 rounded-xl bg-muted/40"
+                        className="flex flex-col gap-3 p-3 rounded-xl bg-muted/40"
                       >
-                        <div className="min-w-0">
-                          <p className="font-medium text-foreground truncate">
-                            {t.firstName} {t.lastName}
-                          </p>
-                          <p className="text-xs text-muted-foreground truncate">{t.email}</p>
+                        <div className="flex items-center justify-between">
+                          <div className="min-w-0">
+                            <p className="font-medium text-foreground truncate">
+                              {t.firstName} {t.lastName}
+                            </p>
+                            <p className="text-xs text-muted-foreground truncate">{t.email}</p>
+                          </div>
+                          <Button size="sm" variant="outline" onClick={() => openEdit(t)}>
+                            <Pencil className="h-4 w-4 mr-1" />
+                            Edit
+                          </Button>
                         </div>
-                        <Button size="sm" variant="outline" onClick={() => openEdit(t)}>
-                          <Pencil className="h-4 w-4 mr-1" />
-                          Edit
-                        </Button>
+                        
+                        {/* Address Details */}
+                        <div className="border-t border-border/50 pt-2 space-y-2">
+                          {t.landmark && (
+                            <div>
+                              <p className="text-xs text-muted-foreground">Landmark</p>
+                              <p className="text-xs font-medium text-foreground">{t.landmark}</p>
+                            </div>
+                          )}
+                          <div className="grid grid-cols-2 gap-2">
+                            {t.city && (
+                              <div>
+                                <p className="text-xs text-muted-foreground">City</p>
+                                <p className="text-xs font-medium text-foreground">{t.city}</p>
+                              </div>
+                            )}
+                            {t.state && (
+                              <div>
+                                <p className="text-xs text-muted-foreground">State</p>
+                                <p className="text-xs font-medium text-foreground">{t.state}</p>
+                              </div>
+                            )}
+                          </div>
+                          {t.pincode && (
+                            <div>
+                              <p className="text-xs text-muted-foreground">Pincode</p>
+                              <p className="text-xs font-medium text-foreground">{t.pincode}</p>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     ))
                   )}
@@ -439,6 +539,23 @@ export default function AdminTenants() {
             />
 
             <div className="flex flex-col-reverse sm:flex-row justify-end gap-3 pt-2">
+              {mode === "edit" && (
+                <Button
+                  variant="default"
+                  onClick={handleDownloadPDF}
+                  className="gradient-primary w-full sm:w-auto"
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  Download PDF
+                </Button>
+              )}
+              <Button
+                onClick={handleSave}
+                disabled={isSaving}
+                className="gradient-primary w-full sm:w-auto"
+              >
+                {isSaving ? "Saving..." : "Save"}
+              </Button>
               <Button
                 variant="outline"
                 onClick={closeDialog}
@@ -446,13 +563,6 @@ export default function AdminTenants() {
                 className="w-full sm:w-auto"
               >
                 Cancel
-              </Button>
-              <Button
-                onClick={handleSave}
-                disabled={isSaving}
-                className="gradient-primary w-full sm:w-auto"
-              >
-                {isSaving ? "Saving..." : "Save"}
               </Button>
             </div>
           </div>

@@ -1,8 +1,13 @@
 import jsPDF from 'jspdf';
 import { Tenant, Room } from '@/contexts/DataContext';
+import { getStateNameById, getCityNameById } from '@/api/location.api';
 
-export const generateTenantPDF = (tenant: Tenant, room: Room | undefined) => {
+export const generateTenantPDF = async (tenant: Tenant, room: Room | undefined) => {
   try {
+    // 🔥 Resolve state and city names
+    const stateName = tenant.stateName || (tenant.state ? await getStateNameById(tenant.state as number) : "");
+    const cityName = tenant.cityName || (tenant.city ? await getCityNameById(tenant.city as number) : "");
+
     const pdf = new jsPDF();
     
     // Set colors
@@ -55,8 +60,8 @@ export const generateTenantPDF = (tenant: Tenant, room: Room | undefined) => {
     pdf.setTextColor(0, 0, 0);
     
     const addressInfo: [string, string][] = [
-      ['City:', tenant.city || 'N/A'],
-      ['State:', tenant.state || 'N/A'],
+      ['City:', cityName || tenant.city || 'N/A'],
+      ['State:', stateName || tenant.state || 'N/A'],
       ['Pincode:', tenant.pincode || 'N/A'],
       ['Landmark:', tenant.landmark || 'N/A'],
     ];
@@ -123,9 +128,9 @@ export const generateTenantPDF = (tenant: Tenant, room: Room | undefined) => {
   }
 };
 
-export const downloadTenantPDF = (tenant: Tenant, room: Room | undefined) => {
+export const downloadTenantPDF = async (tenant: Tenant, room: Room | undefined) => {
   try {
-    const pdf = generateTenantPDF(tenant, room);
+    const pdf = await generateTenantPDF(tenant, room);
     const filename = `Tenant_${tenant.firstName}_${tenant.lastName}_${Date.now()}.pdf`;
     pdf.save(filename);
     console.log('✅ PDF downloaded:', filename);

@@ -54,7 +54,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       identifier === "admin" ||
       identifier === "admin@pg.com" ||
       identifier === "peter01"
-    ) {
+    ) { 
       try {
         const res = await api.post("/login/", {
           username: identifier,

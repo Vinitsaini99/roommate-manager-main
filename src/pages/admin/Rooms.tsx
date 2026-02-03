@@ -66,25 +66,6 @@ useEffect(() => {
   //   setIsModalOpen(true);
   // };
 
-=======
-
-  // const filteredRooms = useMemo(() => {
-  //   return rooms.filter(room => {
-  //     const matchesSearch = room.roomNumber.toString().includes(searchQuery);
-  //     const matchesFilter =
-  //       filter === "all" ||
-  //       (filter === "available" && !room.isOccupied) ||
-  //       (filter === "occupied" && room.isOccupied);
-  //     return matchesSearch && matchesFilter;
-  //   });
-  // }, [rooms, searchQuery, filter]);
-
-  // const handleRoomClick = (room: Room) => {
-  //   setSelectedRoom(room);
-  //   setIsModalOpen(true);
-  // };
-
->>>>>>> 306546b424c047394fb6ab1bc06dfb375f70bdf3
   // const handleAddNewRoom = () => {
   //   setSelectedRoom(null);
   //   setIsModalOpen(true);
@@ -124,7 +105,6 @@ useEffect(() => {
 //   fetchRooms();
 // }, []);
 
-<<<<<<< HEAD
 useEffect(() => {
   function handleClickOutside(event: MouseEvent) {
     if (

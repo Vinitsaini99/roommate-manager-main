@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/select";
 import {
   fetchStates,
-  fetchCities,
+  fetchCitiesByState,
   type State,
   type City,
 } from "@/api/location.api";
@@ -27,11 +27,13 @@ export interface TenantFormData {
   pincode: string;
   aadhaarNumber: string;
   tokenMoney: number;
+  stateId?: number | null; // Backend ID for state
+  cityId?: number | null;  // Backend ID for city
 }
 
 interface Props {
   data: TenantFormData;
-  updateField: (field: keyof TenantFormData, value: string | number) => void;
+  updateField: (field: keyof TenantFormData, value: string | number | null) => void;
   label: string;
 }
 const formatAadhaar = (value: string) => {
@@ -50,66 +52,109 @@ const formatPhone = (value: string) => {
 
 const TenantFormFields = React.memo(
   ({ data, updateField, label }: Props) => {
-    const [stateSearch, setStateSearch] = useState("");
-    const [citySearch, setCitySearch] = useState("");
-
     const [states, setStates] = useState<State[]>([]);
     const [cities, setCities] = useState<City[]>([]);
+    const [statesLoading, setStatesLoading] = useState(true);
+    const [citiesLoading, setCitiesLoading] = useState(false);
 
     // Local selected IDs (backend numeric IDs), while form data keeps names
-    const [selectedStateId, setSelectedStateId] = useState<string>("");
-    const [selectedCityId, setSelectedCityId] = useState<string>("");
+    const [selectedStateId, setSelectedStateId] = useState<string | null>(null);
+    const [selectedCityId, setSelectedCityId] = useState<string | null>(null);
 
+    // Load states on component mount
     useEffect(() => {
-      const loadLocations = async () => {
+      const loadStates = async () => {
         try {
-          const [statesData, citiesData] = await Promise.all([
-            fetchStates(),
-            fetchCities(),
-          ]);
+          setStatesLoading(true);
+          const statesData = await fetchStates();
           setStates(statesData);
-          setCities(citiesData);
+          console.log("✅ States loaded:", statesData.length);
         } catch (error) {
-          console.error("Failed to load states/cities:", error);
+          console.error("❌ Failed to load states:", error);
+          setStates([]);
+        } finally {
+          setStatesLoading(false);
         }
       };
 
-      loadLocations();
+      loadStates();
     }, []);
+
+    // Load cities when state is selected
+    useEffect(() => {
+      if (!selectedStateId) {
+        setCities([]); // Clear cities if no state selected
+        setSelectedCityId(null);
+        return;
+      }
+
+      const loadCities = async () => {
+        try {
+          setCitiesLoading(true);
+          const stateIdNum = parseInt(selectedStateId, 10);
+          console.log("📍 Fetching cities for state:", stateIdNum);
+          const citiesData = await fetchCitiesByState(stateIdNum);
+          setCities(citiesData);
+          console.log("✅ Cities loaded:", citiesData.length);
+        } catch (error) {
+          console.error(`❌ Failed to load cities for state ${selectedStateId}:`, error);
+          setCities([]);
+        } finally {
+          setCitiesLoading(false);
+        }
+      };
+
+      loadCities();
+    }, [selectedStateId]);
 
     // When options load or existing tenant data changes, sync selected IDs
     useEffect(() => {
       if (!states.length) return;
-      if (!data.state) return;
+      if (!data.state && data.stateId === undefined) return;
 
-      // data.state may be a name ("Jharkhand") or an ID string
-      const stateById = states.find(
-        (s) => String(s.id) === String(data.state),
-      );
+      // Try by stateId first (numeric ID from API)
+      if (data.stateId !== undefined) {
+        setSelectedStateId(String(data.stateId));
+        return;
+      }
+
+      // Fallback: try by state name or ID from data.state
+      const stateStr = String(data.state).trim();
+      if (!stateStr) return;
+
+      const stateById = states.find((s) => String(s.id) === stateStr);
       const stateByName = states.find(
-        (s) => s.name.toLowerCase() === data.state.toLowerCase(),
+        (s) => s.name.toLowerCase() === stateStr.toLowerCase(),
       );
       const match = stateById || stateByName;
       if (match) {
         setSelectedStateId(String(match.id));
       }
-    }, [states, data.state]);
+    }, [states, data.state, data.stateId]);
 
     useEffect(() => {
       if (!cities.length) return;
-      if (!data.city) return;
+      if (!data.city && data.cityId === undefined) return;
 
-      const cityById = cities.find(
-        (c) => String(c.id) === String(data.city),
-      );
+      // Try by cityId first (numeric ID from API)
+      if (data.cityId !== undefined) {
+        setSelectedCityId(String(data.cityId));
+        return;
+      }
+
+      // Fallback: try by city name or ID from data.city
+      const cityStr = String(data.city).trim();
+      if (!cityStr) return;
+
+      const cityById = cities.find((c) => String(c.id) === cityStr);
       const cityByName = cities.find(
-        (c) => c.name.toLowerCase() === data.city.toLowerCase(),
+        (c) => c.name.toLowerCase() === cityStr.toLowerCase(),
       );
       const match = cityById || cityByName;
       if (match) {
         setSelectedCityId(String(match.id));
       }
-    }, [cities, data.city]);
+    }, [cities, data.city, data.cityId]);
 
     return (
       <div className="space-y-4">
@@ -185,15 +230,20 @@ const TenantFormFields = React.memo(
           <div className="space-y-2">
             <Label>State</Label>
             <Select
-              value={selectedStateId}
+              value={selectedStateId ?? ""}
               onValueChange={(v) => {
+                // v is string id
                 setSelectedStateId(v);
-                // Store human-readable state name in form data
-                const st = states.find((s) => String(s.id) === v);
-                updateField("state", st ? st.name : "");
-                // Reset city selection
-                setSelectedCityId("");
+
+                const id = Number(v);
+                const stateObj = states.find((s) => s.id === id);
+                updateField("state", stateObj?.name || "");
+                updateField("stateId", isNaN(id) ? null : id);
+
+                // reset city selection and form city fields
+                setSelectedCityId(null);
                 updateField("city", "");
+                updateField("cityId", null);
               }}
             >
               <SelectTrigger>
@@ -207,33 +257,35 @@ const TenantFormFields = React.memo(
                 ))}
               </SelectContent>
             </Select>
+
           </div>
 
           {/* City with Search */}
           <div className="space-y-2">
             <Label>City</Label>
             <Select
-              value={selectedCityId}
               disabled={!selectedStateId}
+              value={selectedCityId ?? ""}
               onValueChange={(v) => {
                 setSelectedCityId(v);
-                const ct = cities.find((c) => String(c.id) === v);
-                updateField("city", ct ? ct.name : "");
+                const id = Number(v);
+                const cityObj = cities.find((c) => c.id === id);
+                updateField("city", cityObj?.name || "");
+                updateField("cityId", isNaN(id) ? null : id);
               }}
             >
               <SelectTrigger>
                 <SelectValue placeholder="Select city" />
               </SelectTrigger>
               <SelectContent>
-                {cities
-                  .filter((c) => String(c.state) === selectedStateId)
-                  .map((c) => (
-                    <SelectItem key={c.id} value={String(c.id)}>
-                      {c.name}
-                    </SelectItem>
-                  ))}
+                {cities.map((c) => (
+                  <SelectItem key={c.id} value={String(c.id)}>
+                    {c.name}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
+
           </div>
 
           {/* Pincode */}
