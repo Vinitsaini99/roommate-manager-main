@@ -21,7 +21,6 @@ export default function AdminRooms() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
   const cardRef = useRef<HTMLDivElement | null>(null);
-<<<<<<< HEAD
 const { rooms, tenants, fetchRooms, fetchTenants, updateRoom, addRoom } = useData();
 
 const filteredRooms = useMemo(() => {
@@ -46,35 +45,6 @@ const handleAddNewRoom = () => {
   setSelectedRoom(null);
   setIsModalOpen(true);
 };
-=======
-const { rooms, tenants, fetchRooms, fetchTenants } = useData();
-
-useEffect(() => {
-  fetchRooms();
-  fetchTenants();
-}, [fetchRooms, fetchTenants]);
-
-const getRoomNumber = (roomId?: string | number) => {
-  if (!roomId) return "—";
-
-  const room = rooms.find(r => String(r.id) === String(roomId) || String(r.roomId) === String(roomId));
-  return room?.roomId ?? "—";
-};
-
- const filteredRooms = useMemo(() => {
-  return rooms.filter(room => {
-    const roomNum = room.roomId?.toString() || '';
-    const matchesSearch = roomNum.includes(searchQuery);
-    const matchesFilter =
-      filter === 'all' ||
-      (filter === 'available' && !room.isOccupied) ||
-      (filter === 'occupied' && room.isOccupied);
-    return matchesSearch && matchesFilter;
-  });
-}, [rooms, searchQuery, filter]);
-
-// console.log("filteredRooms",filteredRooms);
->>>>>>> 306546b424c047394fb6ab1bc06dfb375f70bdf3
 
 useEffect(() => {
   fetchRooms();
@@ -96,7 +66,6 @@ useEffect(() => {
   //   setIsModalOpen(true);
   // };
 
-<<<<<<< HEAD
 =======
 
   // const filteredRooms = useMemo(() => {
@@ -157,9 +126,6 @@ useEffect(() => {
 
 <<<<<<< HEAD
 useEffect(() => {
-=======
-  useEffect(() => {
->>>>>>> 306546b424c047394fb6ab1bc06dfb375f70bdf3
   function handleClickOutside(event: MouseEvent) {
     if (
       cardRef.current &&
@@ -415,7 +381,6 @@ useEffect(() => {
         )}
       </div>
 
-<<<<<<< HEAD
         {isModalOpen && (
           <RoomModal
             room={selectedRoom}
@@ -451,51 +416,6 @@ useEffect(() => {
             }}
           />
         )}
-=======
- {selectedRoom && (
-  <RoomModal
-    room={selectedRoom}
-    isOpen={isModalOpen}
-    onClose={() => setIsModalOpen(false)}
-    onSave={async (data) => {
-  try {
-    if (selectedRoom?.id) {
-      const payload = {
-        room_id: selectedRoom.roomId,
-        room_type:
-          data.type === "single"
-            ? "Single"
-            : data.type === "double"
-            ? "Double"
-            : "Triple",
-        ac_non_ac: data.isAC ? "AC" : "Non-AC",
-        room_rent: data.rent,
-        facility: 1,
-        remarks: "",
-      };
-
-      console.log("✅ ROOM UPDATE PAYLOAD:", payload);
-
-      await api.put(`/rooms/${selectedRoom.id}/`, payload);
-    }
-
-    await fetchRooms();
-    setIsModalOpen(false);
-  } catch (error: any) {
-    console.error("❌ Room update error:", error?.response?.data || error.message);
-  }
-}}
-
-  />
-)}
-
-
-
-
-
-
-
->>>>>>> 306546b424c047394fb6ab1bc06dfb375f70bdf3
     </div>
   );
 }

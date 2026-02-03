@@ -129,12 +129,7 @@ const handleVerifyAll = (tenantId: string) => {
       </div>
 
       {/* Stats */}
-<<<<<<< HEAD
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4">
-=======
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4">
-             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4">
->>>>>>> 306546b424c047394fb6ab1bc06dfb375f70bdf3
 
       {/* TOTAL TENANTS */}
       <div
@@ -165,8 +160,6 @@ const handleVerifyAll = (tenantId: string) => {
       >
         <div className="h-10 w-10 md:h-12 md:w-12 rounded-xl bg-success/10 flex items-center justify-center">
           <CheckCircle className="h-5 w-5 md:h-6 md:w-6 text-success" />
-<<<<<<< HEAD
-=======
         </div>
         <div>
           <p className="text-xl md:text-2xl font-bold text-success">
@@ -178,73 +171,37 @@ const handleVerifyAll = (tenantId: string) => {
         </div>
       </div>
 
-  {/* PENDING */}
-  <div
-    className={`stat-card flex items-center gap-3 md:gap-4 cursor-pointer ${
-      filter === "pending" ? "ring-2 ring-warning" : ""
-    }`}
-    onClick={() => setFilter("pending")}
-  >
-    <div className="h-10 w-10 md:h-12 md:w-12 rounded-xl bg-warning/10 flex items-center justify-center">
-      <Clock className="h-5 w-5 md:h-6 md:w-6 text-warning" />
-    </div>
-    <div>
-      <p className="text-xl md:text-2xl font-bold text-warning">
-        {pendingCount}
-      </p>
-      <p className="text-xs md:text-sm text-muted-foreground">
-        Pending
-      </p>
-    </div>
-  </div>
-
-</div>
-      </div>
-
-
-      {/* Filters */}
-      <div className="flex flex-col gap-4">
-        <div className="relative w-full">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search by tenant name..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-10"
-          />
->>>>>>> 306546b424c047394fb6ab1bc06dfb375f70bdf3
+      {/* PENDING */}
+      <div
+        className={`stat-card flex items-center gap-3 md:gap-4 cursor-pointer ${
+          filter === "pending" ? "ring-2 ring-warning" : ""
+        }`}
+        onClick={() => setFilter("pending")}
+      >
+        <div className="h-10 w-10 md:h-12 md:w-12 rounded-xl bg-warning/10 flex items-center justify-center">
+          <Clock className="h-5 w-5 md:h-6 md:w-6 text-warning" />
         </div>
         <div>
-          <p className="text-xl md:text-2xl font-bold text-success">
-            {verifiedCount}
+          <p className="text-xl md:text-2xl font-bold text-warning">
+            {pendingCount}
           </p>
           <p className="text-xs md:text-sm text-muted-foreground">
-            Verified
+            Pending
           </p>
         </div>
       </div>
-
-  {/* PENDING */}
-  <div
-    className={`stat-card flex items-center gap-3 md:gap-4 cursor-pointer ${
-      filter === "pending" ? "ring-2 ring-warning" : ""
-    }`}
-    onClick={() => setFilter("pending")}
-  >
-    <div className="h-10 w-10 md:h-12 md:w-12 rounded-xl bg-warning/10 flex items-center justify-center">
-      <Clock className="h-5 w-5 md:h-6 md:w-6 text-warning" />
     </div>
-    <div>
-      <p className="text-xl md:text-2xl font-bold text-warning">
-        {pendingCount}
-      </p>
-      <p className="text-xs md:text-sm text-muted-foreground">
-        Pending
-      </p>
-    </div>
-  </div>
 
-</div>
+    {/* Filters */}
+    <div className="flex flex-col gap-4">
+      <div className="relative w-full">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Input
+          placeholder="Search by tenant name..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="pl-10"
+        />
 
 
       {/* Tenant Documents List */}
