@@ -238,7 +238,7 @@ export default function AdminTenants() {
   city: form.cityId ?? null,
 };
 
-console.log("FINAL PATCH payload", payload);
+// console.log("FINAL PATCH payload", payload);
 await api.patch(`/tenants/${editingTenantId}/`, payload);
 
 
@@ -252,9 +252,9 @@ await api.patch(`/tenants/${editingTenantId}/`, payload);
         //   payload.city_id = form.cityId;
         // }
 
-        console.log("Saving tenant payload:", payload);
+        // console.log("Saving tenant payload:", payload);
         const response = await api.patch(`/tenants/${editingTenantId}/`, payload);
-        console.log("Tenant updated successfully:", response.data);
+        // console.log("Tenant updated successfully:", response.data);
       }
 
       await fetchRooms();

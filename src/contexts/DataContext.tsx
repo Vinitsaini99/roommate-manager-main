@@ -376,9 +376,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
 };
 
 
-      console.log("[createTenant] Sending payload:", JSON.stringify(payload, null, 2));
+      // console.log("[createTenant] Sending payload:", JSON.stringify(payload, null, 2));
      const res = await api.post("/tenants/", payload);
-console.log("✅ Tenant created:", res.data);
+// console.log("✅ Tenant created:", res.data);
 
       const created = mapTenantFromApi(res.data);
 
@@ -475,7 +475,7 @@ await fetchRooms();
 
   const initializeRooms = async (count: number) => {
     try {
-      console.log(`Creating ${count} rooms...`);
+      // console.log(`Creating ${count} rooms...`);
 
       const endpoints = ["/rooms/", "/api/rooms/", "/api/rooms/initialize/", "/rooms/initialize/"];
       const createdRooms: string[] = [];
@@ -524,14 +524,14 @@ await fetchRooms();
         ];
 
         let created = false;
-        console.log(`Attempting to create room #${i} (trying payload variants and endpoints)`);
+        // console.log(`Attempting to create room #${i} (trying payload variants and endpoints)`);
 
         for (const ep of endpoints) {
           for (const payload of payloadVariants) {
             try {
-              console.log(`[api] POST ${ep} payload:`, payload);
+              // console.log(`[api] POST ${ep} payload:`, payload);
               const res: any = await api.post(ep, payload);
-              console.log(`Room #${i} created via ${ep}:`, res?.data);
+              // console.log(`Room #${i} created via ${ep}:`, res?.data);
               createdRooms.push(String(i));
               created = true;
               break;
@@ -553,7 +553,7 @@ await fetchRooms();
         }
       }
 
-      console.log(`Rooms created: ${createdRooms.length}/${count}`);
+      // console.log(`Rooms created: ${createdRooms.length}/${count}`);
       if (failures.length > 0) {
         console.warn("Some create attempts failed. Example failures:", failures.slice(0, 5));
       }
@@ -583,9 +583,9 @@ await fetchRooms();
         ? freshRes.data
         : freshRes.data?.results || [];
 
-      console.log(
-        `🗑️ Fetched ${allRoomsFromBackend.length} rooms from backend, deleting...`,
-      );
+      // console.log(
+      //   `🗑️ Fetched ${allRoomsFromBackend.length} rooms from backend, deleting...`,
+      // );
 
       let deletedCount = 0;
       let failedCount = 0;
@@ -606,9 +606,9 @@ await fetchRooms();
           }
           if (!deleted) throw new Error('Delete failed');
           deletedCount++;
-          console.log(
-            `✅ Room #${room.room_number || room.id} (Backend ID: ${room.id}) deleted`,
-          );
+          // console.log(
+          //   `✅ Room #${room.room_number || room.id} (Backend ID: ${room.id}) deleted`,
+          // );
         } catch (err: any) {
           failedCount++;
           console.error(
@@ -619,9 +619,9 @@ await fetchRooms();
         }
       }
 
-      console.log(
-        `🎉 Deletion complete: ${deletedCount} deleted, ${failedCount} failed`,
-      );
+      // console.log(
+      //   `🎉 Deletion complete: ${deletedCount} deleted, ${failedCount} failed`,
+      // );
 
       // Clear from frontend immediately
       setRooms([]);
@@ -633,9 +633,9 @@ await fetchRooms();
       const remainingRooms = Array.isArray(verifyRes.data)
         ? verifyRes.data
         : verifyRes.data?.results || [];
-      console.log(
-        `✅ Verified: ${remainingRooms.length} rooms remaining in backend`,
-      );
+      // console.log(
+      //   `✅ Verified: ${remainingRooms.length} rooms remaining in backend`,
+      // );
 
       if (remainingRooms.length > 0) {
         console.warn(
@@ -714,9 +714,9 @@ await fetchRooms();
     let lastErr: any = null;
     for (const ep of endpoints) {
       try {
-        console.log(`[addRoom] POST ${ep}:`, JSON.stringify(payload, null, 2));
+        // console.log(`[addRoom] POST ${ep}:`, JSON.stringify(payload, null, 2));
         const res = await api.post(ep, payload);
-        console.log(`✅ [addRoom] success:`, res.data);
+        // console.log(`✅ [addRoom] success:`, res.data);
         setRooms((prev) => [...prev, mapRoomFromApi(res.data)]);
         return;
       } catch (err: any) {
@@ -780,9 +780,9 @@ await fetchRooms();
     for (const ep of endpoints) {
       for (const payload of cleanPayloads) {
         try {
-          console.log(`[updateRoom] PUT ${ep} with payload:`, JSON.stringify(payload, null, 2));
+          // console.log(`[updateRoom] PUT ${ep} with payload:`, JSON.stringify(payload, null, 2));
           const res: any = await api.put(ep, payload);
-          console.log(`✅ [updateRoom] PUT success ${ep}:`, res?.data);
+          // console.log(`✅ [updateRoom] PUT success ${ep}:`, res?.data);
           setRooms((prev) => prev.map((r) => (r.id === id ? mapRoomFromApi(res.data) : r)));
           return;
         } catch (err: any) {
@@ -851,7 +851,7 @@ await fetchRooms();
       ? res.data
       : res.data?.results || res.data?.data || [];
     
-    console.log("PAYMENTS ARRAY:", paymentsArray);
+    // console.log("PAYMENTS ARRAY:", paymentsArray);
     
     // Map payments from API format to frontend format
     const mappedPayments = paymentsArray.map(mapPaymentFromApi);
@@ -865,7 +865,7 @@ await fetchRooms();
 const fetchTenantHistory = useCallback(async () => {
   try {
     const res = await api.get("/tenant-history/");
-    console.log("TENANT HISTORY FROM API 👉", res.data);
+    // console.log("TENANT HISTORY FROM API 👉", res.data);
 
     const historyArray = Array.isArray(res.data)
       ? res.data
@@ -1013,7 +1013,7 @@ useEffect(() => {
     }
 
     // Otherwise tenant is local-only — remove locally
-    console.log("🗑️ Deleting local tenant");
+    // console.log("🗑️ Deleting local tenant");
     setTenants((prev) => prev.filter((t) => t.id !== id));
 
     if (room) {
@@ -1045,7 +1045,7 @@ const addPayment = async (payment: Omit<Payment, "id">) => {
     };
 
     const res = await api.post("/electricity-bills/", backendPayload);
-    console.log("Payment added:", res.data);
+    // console.log("Payment added:", res.data);
     
     // Add to state with ID from response
     if (res.data && res.data.id) {

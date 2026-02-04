@@ -69,6 +69,8 @@ export default function AdminPayments() {
     "all",
   );
   const [isAddingPayment, setIsAddingPayment] = useState(false);
+  const [currentView, setCurrentView] = useState<"payments" | "history">("payments");
+  const [historyFilterRoomPk, setHistoryFilterRoomPk] = useState<string | null>(null);
   // Select a ROOM (unique) instead of tenant (avoid duplicates for double/triple rooms)
   const [selectedRoomPk, setSelectedRoomPk] = useState("");
   const [selectedMonth, setSelectedMonth] = useState("");
@@ -267,6 +269,56 @@ export default function AdminPayments() {
     setPrevReading(latest.current_reading || 0);
   }, [selectedRoomPk, payments, tenants]);
 
+  // Build room options for Payment History filter
+  const historyRoomFilterOptions = React.useMemo(() => {
+    const roomPaymentMap = new Map<string, { room: any; count: number }>();
+
+    // Group payments by room
+    for (const p of payments) {
+      const tenant = tenants.find((t) => t.id === p.tenant);
+      if (!tenant?.roomPk) continue;
+      const roomPk = String(tenant.roomPk);
+      const room = rooms.find((r) => String(r.id) === String(roomPk));
+      if (!room) continue;
+
+      if (!roomPaymentMap.has(roomPk)) {
+        roomPaymentMap.set(roomPk, { room, count: 0 });
+      }
+      const entry = roomPaymentMap.get(roomPk)!;
+      entry.count += 1;
+    }
+
+    // Convert to options array and sort
+    const options = Array.from(roomPaymentMap.values()).map((entry) => ({
+      roomPk: String(entry.room.id),
+      roomId: entry.room.roomId || String(entry.room.id),
+      count: entry.count,
+    }));
+
+    return options.sort((a, b) => {
+      const an = Number(String(a.roomId).replace(/\D/g, ""));
+      const bn = Number(String(b.roomId).replace(/\D/g, ""));
+      if (!Number.isNaN(an) && !Number.isNaN(bn)) return an - bn;
+      return String(a.roomId).localeCompare(String(b.roomId));
+    });
+  }, [payments, tenants, rooms]);
+
+  // Filter payments for history view
+  const filteredHistoryPayments = React.useMemo(() => {
+    let result = [...payments];
+    if (historyFilterRoomPk) {
+      result = result.filter((p) => {
+        const tenant = tenants.find((t) => t.id === p.tenant);
+        return tenant && String(tenant.roomPk) === String(historyFilterRoomPk);
+      });
+    }
+    return result.sort((a, b) => {
+      const da = new Date(a.date_month || `${a.year || currentYear}-01-01`).getTime();
+      const db = new Date(b.date_month || `${b.year || currentYear}-01-01`).getTime();
+      return db - da;
+    });
+  }, [payments, tenants, historyFilterRoomPk, currentYear]);
+
   const handleAddPayment = () => {
     if (!selectedTenant || !selectedMonth) {
       toast({
@@ -462,239 +514,256 @@ Thank you
             Manage rent and electricity billing for all tenants
           </p>
         </div>
-        <Dialog open={isAddingPayment} onOpenChange={setIsAddingPayment}>
-          <DialogTrigger asChild>
-            <Button className="gradient-primary w-full sm:w-auto">
-              <Plus className="h-4 w-4 mr-2" />
-              Add Payment Entry
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>Add Payment Entry</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4 md:space-y-6 pt-4">
-              <div className="space-y-2">
-                <Label>Select Room</Label>
-                <Select
-                  value={selectedRoomPk}
-                  onValueChange={setSelectedRoomPk}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Choose room..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {roomOptions.map((r) => (
-                      <SelectItem key={r.roomPk} value={r.roomPk}>
-                        {r.roomIdLabel}{" "}
-                        {r.occupants > 1 ? `(${r.occupants} tenants)` : ""}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Month</Label>
-                <Select value={selectedMonth} onValueChange={setSelectedMonth}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select month..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {months
-                      .filter(
-                        (m) => !usedMonthsForSelectedRoom.has(m.toLowerCase()),
-                      )
-                      .map((m) => (
-                        <SelectItem key={m} value={m}>
-                          {m} {currentYear}
+        <div className="flex gap-2">
+          <Dialog open={isAddingPayment} onOpenChange={setIsAddingPayment}>
+            <DialogTrigger asChild>
+              <Button className="gradient-primary w-full sm:w-auto">
+                <Plus className="h-4 w-4 mr-2" />
+                Add Payment Entry
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>Add Payment Entry</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 md:space-y-6 pt-4">
+                <div className="space-y-2">
+                  <Label>Select Room</Label>
+                  <Select
+                    value={selectedRoomPk}
+                    onValueChange={setSelectedRoomPk}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Choose room..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {roomOptions.map((r) => (
+                        <SelectItem key={r.roomPk} value={r.roomPk}>
+                          {r.roomIdLabel}{" "}
+                          {r.occupants > 1 ? `(${r.occupants} tenants)` : ""}
                         </SelectItem>
                       ))}
-                  </SelectContent>
-                </Select>
-              </div>
+                    </SelectContent>
+                  </Select>
+                </div>
 
-              <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>Previous Reading</Label>
-                  <Input
-                    type="number"
-                    value={prevReading}
-                    onChange={(e) => setPrevReading(Number(e.target.value))}
-                  />
+                  <Label>Month</Label>
+                  <Select value={selectedMonth} onValueChange={setSelectedMonth}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select month..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {months
+                        .filter(
+                          (m) => !usedMonthsForSelectedRoom.has(m.toLowerCase()),
+                        )
+                        .map((m) => (
+                          <SelectItem key={m} value={m}>
+                            {m} {currentYear}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
                 </div>
-                <div className="space-y-2">
-                  <Label>Current Reading</Label>
-                  <Input
-                    type="number"
-                    value={currReading}
-                    onChange={(e) => setCurrReading(Number(e.target.value))}
-                  />
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Previous Reading</Label>
+                    <Input
+                      type="number"
+                      value={prevReading}
+                      onChange={(e) => setPrevReading(Number(e.target.value))}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Current Reading</Label>
+                    <Input
+                      type="number"
+                      value={currReading}
+                      onChange={(e) => setCurrReading(Number(e.target.value))}
+                    />
+                  </div>
+                </div>
+
+                {selectedTenant && (
+                  <div className="bg-muted/50 rounded-xl p-4 space-y-3">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Units Used:</span>
+                      <span className="font-medium">{unitsUsed} units</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">
+                        Electricity (₹{settings.electricityRate}/unit):
+                      </span>
+                      <span className="font-medium">
+                        {formatCurrency(electricityAmount)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Room Rent:</span>
+                      <span className="font-medium">
+                        {formatCurrency(selectedRoom?.rent || 0)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-base pt-2 border-t border-border">
+                      <span className="font-medium">Total Bill:</span>
+                      <span className="font-bold text-primary">
+                        {formatCurrency(totalBill)}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex flex-col sm:flex-row justify-end gap-3 ">
+                  <Button
+                    variant="outline"
+                    onClick={() => setIsAddingPayment(false)}
+                    className="w-full sm:w-auto"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={handleAddPayment}
+                    className="gradient-primary w-full sm:w-auto"
+                  >
+                    Add Entry
+                  </Button>
                 </div>
               </div>
+            </DialogContent>
+          </Dialog>
 
-              {selectedTenant && (
-                <div className="bg-muted/50 rounded-xl p-4 space-y-3">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Units Used:</span>
-                    <span className="font-medium">{unitsUsed} units</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">
-                      Electricity (₹{settings.electricityRate}/unit):
-                    </span>
-                    <span className="font-medium">
-                      {formatCurrency(electricityAmount)}
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Room Rent:</span>
-                    <span className="font-medium">
-                      {formatCurrency(selectedRoom?.rent || 0)}
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-base pt-2 border-t border-border">
-                    <span className="font-medium">Total Bill:</span>
-                    <span className="font-bold text-primary">
-                      {formatCurrency(totalBill)}
-                    </span>
-                  </div>
-                </div>
-              )}
-
-              <div className="flex flex-col sm:flex-row justify-end gap-3">
-                <Button
-                  variant="outline"
-                  onClick={() => setIsAddingPayment(false)}
-                  className="w-full sm:w-auto"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  onClick={handleAddPayment}
-                  className="gradient-primary w-full sm:w-auto"
-                >
-                  Add Entry
-                </Button>
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
-      </div>
-
-      {/* Electricity Settings */}
-      <div className="stat-card">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 md:h-12 md:w-12 rounded-xl bg-warning/10 flex items-center justify-center">
-              <Zap className="h-5 w-5 md:h-6 md:w-6 text-warning" />
-            </div>
-            <div>
-              <p className="font-medium text-foreground">Electricity Rate</p>
-              <p className="text-sm text-muted-foreground">
-                Per unit charge for electricity
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="text-xl md:text-2xl font-bold text-foreground">
-              ₹{settings.electricityRate}
-            </span>
-            <span className="text-muted-foreground">/ unit</span>
-            <Input
-              type="number"
-              className="w-20"
-              value={settings.electricityRate}
-              onChange={(e) =>
-                updateSettings({ electricityRate: Number(e.target.value) })
-              }
-            />
-          </div>
+          <Button 
+            variant="outline" 
+            className="w-full sm:w-auto"
+            onClick={() => setCurrentView("history")}
+          >
+            <Search className="h-4 w-4 mr-2" />
+            Payment History
+          </Button>
         </div>
       </div>
+
+      {currentView === "payments" && (
+        <>
+          {/* Electricity Settings */}
+          <div className="stat-card">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 md:h-12 md:w-12 rounded-xl bg-warning/10 flex items-center justify-center">
+                  <Zap className="h-5 w-5 md:h-6 md:w-6 text-warning" />
+                </div>
+                <div>
+                  <p className="font-medium text-foreground">Electricity Rate</p>
+                  <p className="text-sm text-muted-foreground">
+                    Per unit charge for electricity
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-xl md:text-2xl font-bold text-foreground">
+                  ₹{settings.electricityRate}
+                </span>
+                <span className="text-muted-foreground">/ unit</span>
+                <Input
+                  type="number"
+                  className="w-20"
+                  value={settings.electricityRate}
+                  onChange={(e) =>
+                    updateSettings({ electricityRate: Number(e.target.value) })
+                  }
+                />
+              </div>
+            </div>
+          </div>
 
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
-        <div className="stat-card flex items-center gap-3 md:gap-4">
-          <div className="h-10 w-10 md:h-12 md:w-12 rounded-xl bg-primary/10 flex items-center justify-center">
-            <CreditCard className="h-5 w-5 md:h-6 md:w-6 text-primary" />
-          </div>
-          <div>
-            <p className="text-lg md:text-2xl font-bold text-foreground">
-              {payments.length}
-            </p>
-            <p className="text-xs md:text-sm text-muted-foreground">Total</p>
-          </div>
-        </div>
-        <div className="stat-card flex items-center gap-3 md:gap-4">
-          <div className="h-10 w-10 md:h-12 md:w-12 rounded-xl bg-success/10 flex items-center justify-center">
-            <CheckCircle className="h-5 w-5 md:h-6 md:w-6 text-success" />
-          </div>
-          <div>
-            <p className="text-lg md:text-2xl font-bold text-success">
-              {paidCount}
-            </p>
-            <p className="text-xs md:text-sm text-muted-foreground">Paid</p>
-          </div>
-        </div>
-        <div className="stat-card flex items-center gap-3 md:gap-4">
-          <div className="h-10 w-10 md:h-12 md:w-12 rounded-xl bg-warning/10 flex items-center justify-center">
-            <Clock className="h-5 w-5 md:h-6 md:w-6 text-warning" />
-          </div>
-          <div>
-            <p className="text-lg md:text-2xl font-bold text-warning">
-              {pendingCount}
-            </p>
-            <p className="text-xs md:text-sm text-muted-foreground">Pending</p>
-          </div>
-        </div>
-        <div className="stat-card flex items-center gap-3 md:gap-4">
-          <div className="h-10 w-10 md:h-12 md:w-12 rounded-xl bg-success/10 flex items-center justify-center">
-            <IndianRupee className="h-5 w-5 md:h-6 md:w-6 text-success" />
-          </div>
-          <div>
-            <p className="text-base md:text-xl font-bold text-success">
-              {formatCurrency(totalCollected)}
-            </p>
-            <p className="text-xs md:text-sm text-muted-foreground">
-              Collected
-            </p>
-          </div>
-        </div>
-          
-      </div>
 
-      {/* Filters */}
-      <div className="flex flex-col gap-4">
-        <div className="relative w-full">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search by tenant name..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-10"
-          />
-        </div>
-        <div className="flex gap-2 overflow-x-auto pb-2">
-          {(["all", "paid", "pending"] as const).map((f) => (
-            <Button
-              key={f}
-              variant={filterStatus === f ? "default" : "outline"}
-              size="sm"
-              onClick={() => setFilterStatus(f)}
-              className={cn(
-                "whitespace-nowrap",
-                filterStatus === f ? "gradient-primary" : "",
-              )}
-            >
-              {f.charAt(0).toUpperCase() + f.slice(1)}
-            </Button>
-          ))}
-        </div>
-      </div>
+  {/* TOTAL */}
+  <div
+    className={cn(
+      "stat-card flex items-center gap-3 md:gap-4 cursor-pointer",
+      filterStatus === "all" && "ring-2 ring-primary"
+    )}
+    onClick={() => setFilterStatus("all")}
+  >
+    <div className="h-10 w-10 md:h-12 md:w-12 rounded-xl bg-primary/10 flex items-center justify-center">
+      <CreditCard className="h-5 w-5 md:h-6 md:w-6 text-primary" />
+    </div>
+    <div>
+      <p className="text-lg md:text-2xl font-bold">
+        {payments.length}
+      </p>
+      <p className="text-xs md:text-sm text-muted-foreground">
+        Total
+      </p>
+    </div>
+  </div>
 
-      {/* Payments Table - Mobile Cards + Desktop Table */}
-      <div className="stat-card overflow-hidden p-0">
+  {/* PAID */}
+  <div
+    className={cn(
+      "stat-card flex items-center gap-3 md:gap-4 cursor-pointer",
+      filterStatus === "paid" && "ring-2 ring-success"
+    )}
+    onClick={() => setFilterStatus("paid")}
+  >
+    <div className="h-10 w-10 md:h-12 md:w-12 rounded-xl bg-success/10 flex items-center justify-center">
+      <CheckCircle className="h-5 w-5 md:h-6 md:w-6 text-success" />
+    </div>
+    <div>
+      <p className="text-lg md:text-2xl font-bold text-success">
+        {paidCount}
+      </p>
+      <p className="text-xs md:text-sm text-muted-foreground">
+        Paid
+      </p>
+    </div>
+  </div>
+
+  {/* PENDING */}
+  <div
+    className={cn(
+      "stat-card flex items-center gap-3 md:gap-4 cursor-pointer",
+      filterStatus === "pending" && "ring-2 ring-warning"
+    )}
+    onClick={() => setFilterStatus("pending")}
+  >
+    <div className="h-10 w-10 md:h-12 md:w-12 rounded-xl bg-warning/10 flex items-center justify-center">
+      <Clock className="h-5 w-5 md:h-6 md:w-6 text-warning" />
+    </div>
+    <div>
+      <p className="text-lg md:text-2xl font-bold text-warning">
+        {pendingCount}
+      </p>
+      <p className="text-xs md:text-sm text-muted-foreground">
+        Pending
+      </p>
+    </div>
+  </div>
+
+  {/* COLLECTED */}
+  <div className="stat-card flex items-center gap-3 md:gap-4">
+  <div className="h-10 w-10 md:h-12 md:w-12 rounded-xl bg-success/10 flex items-center justify-center">
+    <IndianRupee className="h-5 w-5 md:h-6 md:w-6 text-success" />
+  </div>
+  <div>
+    <p className="text-base md:text-xl font-bold text-success">
+      {formatCurrency(totalCollected)}
+    </p>
+    <p className="text-xs md:text-sm text-muted-foreground">
+      Collected
+    </p>
+  </div>
+</div>
+
+
+</div>
+
+        {/* Payments Table - Mobile Cards + Desktop Table */}
+        <div className="stat-card overflow-hidden p-0">
         {/* Desktop Table */}
         <div className="hidden md:block overflow-x-auto">
           <table className="data-table">
@@ -717,7 +786,7 @@ Thank you
                 const units = getUnits(bill);
                 const electricity = getElectricityAmount(bill);
                 const total = electricity + (room?.rent || 0);
-                console.log("STATUS CHECK 👉", bill.status, bill.record_status);
+                // console.log("STATUS CHECK 👉", bill.status, bill.record_status);
 const isPaid = bill.status === "paid";
 
 
@@ -971,7 +1040,103 @@ return (
             </p>
           </div>
         )}
-      </div>
+        </div>
+        </>
+      )}
+
+      {currentView === "history" && (
+        <>
+          {/* Payment History Header */}
+          <div className="flex flex-col md:flex-row md:items-center justify-between mb-6 gap-4">
+            <div>
+              <h2 className="text-2xl font-bold text-foreground">Payment History</h2>
+              <p className="text-sm text-muted-foreground">All payment records sorted by latest date</p>
+            </div>
+            <Button 
+              variant="outline" 
+              onClick={() => setCurrentView("payments")}
+            >
+              ← Back to Payments
+            </Button>
+          </div>
+
+          {/* Room Filter - Above Table, Left Aligned */}
+          <div className="mb-4 flex items-center gap-3">
+            <Label className="text-sm font-medium whitespace-nowrap">Filter by Room:</Label>
+            <Select 
+              value={historyFilterRoomPk || "all"} 
+              onValueChange={(val) => setHistoryFilterRoomPk(val === "all" ? null : val)}
+            >
+              <SelectTrigger className="w-56">
+                <SelectValue placeholder="Select room..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Rooms </SelectItem>
+                {historyRoomFilterOptions.map((option) => (
+                  <SelectItem key={option.roomPk} value={option.roomPk}>
+                    Room {option.roomId} ({option.count} months)
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Payment History Table */}
+          <div className="stat-card overflow-hidden p-0">
+            <div className="overflow-x-auto">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Month</th>
+                    <th>Year</th>
+                    {!historyFilterRoomPk && <th>Room</th>}
+                    <th>Tenant</th>
+                    <th>Amount</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredHistoryPayments.map((p) => {
+                    const room = getRoomByBill(p);
+                    const tenant = getTenantByBill(p);
+                    const amount = p.totalAmount ?? p.amount ?? (getElectricityAmount(p) + (room?.rent || 0));
+                    return (
+                      <tr key={p.id}>
+                        <td>{formatMonth(p.month || "May", p.year || currentYear)}</td>
+                        <td>{p.year || (p.date_month ? new Date(p.date_month).getFullYear() : currentYear)}</td>
+                        {!historyFilterRoomPk && (
+                          <td>{room ? room.roomId || getRoomNumber(room.id) : "—"}</td>
+                        )}
+                        <td>{tenant ? `${tenant.firstName} ${tenant.lastName}`.trim() : "—"}</td>
+                        <td>{formatCurrency(amount)}</td>
+                        <td>
+                          <span className={cn("status-badge text-xs", p.status === "paid" ? "status-paid" : "status-pending")}>
+                            {p.status === "paid" ? "Paid" : "Pending"}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {filteredHistoryPayments.length === 0 && (
+              <div className="flex flex-col items-center justify-center py-12 text-center p-4">
+                <div className="h-16 w-16 rounded-full bg-muted flex items-center justify-center mb-4">
+                  <CreditCard className="h-8 w-8 text-muted-foreground" />
+                </div>
+                <p className="font-medium text-foreground">
+                  {historyFilterRoomPk ? "No payments found for this room" : "No payment history found"}
+                </p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Payment records will appear here
+                </p>
+              </div>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }

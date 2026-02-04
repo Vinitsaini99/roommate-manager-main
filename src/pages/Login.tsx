@@ -21,12 +21,12 @@ export default function Login() {
     setIsLoading(true);
 
     try {
-      console.log("🔐 Login attempt with:", { username, password });
+      // console.log("🔐 Login attempt with:", { username, password });
       const success = await login(username, password);
 
       if (success) {
         const user = JSON.parse(localStorage.getItem("rentease_user") || "{}");
-        console.log("✅ Login successful, user role:", user.role);
+        // console.log("✅ Login successful, user role:", user.role);
 
         if (user.role === "admin") {
           navigate("/admin");

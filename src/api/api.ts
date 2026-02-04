@@ -1,6 +1,6 @@
 import axios from "axios";
 
-const BACKEND = import.meta.env.VITE_API_URL || "http://192.168.1.4:8000/";
+const BACKEND = import.meta.env.VITE_API_URL || "http://192.168.1.12:8000/";
 
 console.info("[api] using backend:", BACKEND);
 

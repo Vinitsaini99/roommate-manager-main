@@ -187,7 +187,7 @@ const roomKey = entry.roomId && entry.roomId !== "" ? entry.roomId : "__NO_ROOM_
   
 
   useEffect(() => {
-  console.log("Tenant history sample:", tenantHistory[0]);
+  // console.log("Tenant history sample:", tenantHistory[0]);
 }, [tenantHistory]);
   /* ================= MOVE TENANT ================= */
   const handleMoveTenant = async () => {

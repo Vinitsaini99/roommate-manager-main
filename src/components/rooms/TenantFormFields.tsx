@@ -68,9 +68,9 @@ const TenantFormFields = React.memo(
           setStatesLoading(true);
           const statesData = await fetchStates();
           setStates(statesData);
-          console.log("✅ States loaded:", statesData.length);
+          // console.log("✅ States loaded:", statesData.length);
         } catch (error) {
-          console.error("❌ Failed to load states:", error);
+          // console.error("❌ Failed to load states:", error);
           setStates([]);
         } finally {
           setStatesLoading(false);
@@ -92,10 +92,10 @@ const TenantFormFields = React.memo(
         try {
           setCitiesLoading(true);
           const stateIdNum = parseInt(selectedStateId, 10);
-          console.log("📍 Fetching cities for state:", stateIdNum);
+          // console.log("📍 Fetching cities for state:", stateIdNum);
           const citiesData = await fetchCitiesByState(stateIdNum);
           setCities(citiesData);
-          console.log("✅ Cities loaded:", citiesData.length);
+          // console.log("✅ Cities loaded:", citiesData.length);
         } catch (error) {
           console.error(`❌ Failed to load cities for state ${selectedStateId}:`, error);
           setCities([]);
