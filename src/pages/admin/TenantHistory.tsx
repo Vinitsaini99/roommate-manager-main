@@ -140,7 +140,7 @@ export default function AdminTenantHistory() {
   /* ================= ROOM NUMBER ================= */
   const getRoomNumber = (roomPk?: string | number) => {
   if (!roomPk) return "No Room";
-
+ 
   const room = rooms.find(
     (r) => String(r.id) === String(roomPk) // 🔥 ONLY PK MATCH
   );

@@ -60,8 +60,8 @@ export const generateTenantPDF = async (tenant: Tenant, room: Room | undefined) 
     pdf.setTextColor(0, 0, 0);
     
     const addressInfo: [string, string][] = [
-      ['City:', cityName || tenant.city || 'N/A'],
-      ['State:', stateName || tenant.state || 'N/A'],
+      ['City:', cityName || tenant.cityName || 'N/A'],
+      ['State:', stateName || tenant.stateName || 'N/A'],
       ['Pincode:', tenant.pincode || 'N/A'],
       ['Landmark:', tenant.landmark || 'N/A'],
     ];

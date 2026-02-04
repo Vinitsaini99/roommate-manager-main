@@ -216,7 +216,7 @@
         pincode: tenant1.pincode,
         aadhaarNumber: tenant1.aadhaarNumber,
         tokenMoney: tenant1.tokenMoney,
-        remarks: t.landmark,
+         remarks: tenant1.landmark, // ✅ LANDMARK → REMARKS
         roomId: room?.id,
         // send numeric IDs required by backend
         state: tenant1.stateId ?? null,
@@ -544,7 +544,7 @@ state: typeof t2.state === "string" ? t2.state : "",
             pincode: t.pincode,
             aadhaarNumber: t.aadhaarNumber,
             tokenMoney: t.tokenMoney,
-            remarks,
+            remarks: t.landmark,
             roomId: room.id,
             // send numeric IDs required by backend
             state: t.stateId ?? null,
@@ -1027,7 +1027,7 @@ state: typeof t2.state === "string" ? t2.state : "",
 
               <div>
                 <p className="text-muted-foreground">Token Money</p>
-                <p className="font-medium">{tenant.tokenMoney ?? 0}</p>
+                <p className="font-medium">{tenant.tokenMoney ?? " "}</p>
               </div>
 
               <div className="col-span-2">

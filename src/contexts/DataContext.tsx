@@ -66,15 +66,19 @@ interface CreateTenantPayload {
   lastName: string;
   email: string;
   phone: string;
-  state: number | null;   // ✅ numeric FK ID
-  city: number | null;    // ✅ numeric FK ID
+  state: number | null;
+  city: number | null;
+  
   pincode: string;
   aadhaarNumber: string;
   tokenMoney: number;
-  remarks: string;
+
+  remarks?: string;
+
   roomId: string | number;
   joinDate?: string;
 }
+
 
 // DataContext.tsx
 export interface Payment {
@@ -235,7 +239,7 @@ const mapTenantFromApi = (t: any): Tenant => {
     isActive: t.is_active ?? t.isActive ?? true,
 
     // Tenant address / identity details
-    landmark: t.landmark ?? "",
+    landmark: t.landmark ?? t.remark ?? "",
     city: !isNaN(cityId) ? cityId : (t.city ?? ""),         // numeric ID if valid, else fallback
     state: !isNaN(stateId) ? stateId : (t.state ?? ""),     // numeric ID if valid, else fallback
     cityName: t.city_name ?? t.cityName ?? "",  // display name if backend provides
@@ -350,24 +354,27 @@ export function DataProvider({ children }: { children: ReactNode }) {
       }
 
       // ✅ FIXED: Send state/city to backend
-      const payload: any = {
-        first_name: data.firstName,
-        last_name: data.lastName,
-        email: data.email,
-        phone_no: data.phone,
-        phone: data.phone,
-        pincode: data.pincode,
-        aadhar_no: data.aadhaarNumber,
-        aadhaar_no: data.aadhaarNumber,
-        token: data.tokenMoney,
-        token_money: data.tokenMoney,
-         remarks: data.remarks,
-        room: roomId,
-        room_id: roomId,
-        join_date: data.joinDate || new Date().toISOString().split("T")[0],
-        state: data.state,
-        city: data.city,
-      };
+     const payload: any = {
+  first_name: data.firstName,
+  last_name: data.lastName,
+  email: data.email,
+  phone_no: data.phone,
+  phone: data.phone,
+  pincode: data.pincode,
+  aadhar_no: data.aadhaarNumber,
+  token_money: data.tokenMoney,
+
+  // 🔥 landmark → backend remarks
+  remarks: data.remarks ?? "",
+
+
+  room: roomId,
+  room_id: roomId,
+  join_date: data.joinDate,
+  state: data.state,
+  city: data.city,
+};
+
 
       console.log("[createTenant] Sending payload:", JSON.stringify(payload, null, 2));
      const res = await api.post("/tenants/", payload);

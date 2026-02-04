@@ -191,20 +191,25 @@ export default function AdminTenants() {
       const cleanPhone = String(form.phone || "").replace(/\D/g, "");
 
       if (mode === "add") {
-        await createTenant({
-          firstName: form.firstName,
-          lastName: form.lastName,
-          email: form.email,
-          phone: cleanPhone,
-          state: form.stateId || null,
-          city: form.cityId || null,
-          pincode: form.pincode || "",
-          aadhaarNumber: form.aadhaarNumber || "",
-          tokenMoney: Number(form.tokenMoney ?? 0),
-          remarks: "",
-          roomId: selectedRoomPk,
-          joinDate: new Date().toISOString().split("T")[0],
-        });
+  await createTenant({
+    firstName: form.firstName,
+    lastName: form.lastName,
+    email: form.email,
+    phone: cleanPhone,
+    state: form.stateId || null,
+    city: form.cityId || null,
+    pincode: form.pincode || "",
+    
+    aadhaarNumber: form.aadhaarNumber,
+    tokenMoney: Number(form.tokenMoney ?? 0),
+
+    // 🔥 IMPORTANT FIX
+    remarks: form.landmark,
+
+    roomId: selectedRoomPk,
+    joinDate: new Date().toISOString().split("T")[0],
+  });
+
       } else {
         if (!editingTenantId) return;
 
@@ -220,7 +225,7 @@ export default function AdminTenants() {
   // ✅ backend expects this
   phone: cleanPhone,
 
-  landmark: form.landmark || "",
+  remarks: form.landmark || "",
   pincode: form.pincode || "",
   aadhaar_no: form.aadhaarNumber || "",
 
@@ -469,16 +474,16 @@ await api.patch(`/tenants/${editingTenantId}/`, payload);
                             </div>
                           )}
                           <div className="grid grid-cols-2 gap-2">
-                            {t.city && (
-                              <div>
-                                <p className="text-xs text-muted-foreground">City</p>
-                                <p className="text-xs font-medium text-foreground">{t.city}</p>
-                              </div>
-                            )}
                             {t.state && (
                               <div>
                                 <p className="text-xs text-muted-foreground">State</p>
-                                <p className="text-xs font-medium text-foreground">{t.state}</p>
+                                <p className="text-xs font-medium text-foreground">{t.stateName}</p>
+                              </div>
+                            )}
+                            {t.city && (
+                              <div>
+                                <p className="text-xs text-muted-foreground">City</p>
+                                <p className="text-xs font-medium text-foreground">{t.cityName}</p>
                               </div>
                             )}
                           </div>
