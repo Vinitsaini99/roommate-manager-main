@@ -19,7 +19,18 @@ export default function AdminDocuments() {
   const [uploadingTenantId, setUploadingTenantId] = useState<string | null>(null);
   const [pendingFiles, setPendingFiles] = useState<Record<string, { address?: File; id?: File }>>({});
 
-  const activeTenants = tenants.filter(t => t.isActive && (t.roomId || t.roomPk));
+  const activeTenants = tenants
+  .filter(t => t.isActive && (t.roomId || t.roomPk))
+  .map((t: any) => {
+    const address = t.addressDocUrl || t.address_doc || t.address_proof;
+    const id = t.idProofUrl || t.id_proof || t.id_proof_doc;
+
+    return {
+      ...t,
+      documentsVerified: Boolean(address && id),
+    };
+  });
+
 
   const makeDocUrl = (path?: string | null) => {
     if (!path) return undefined;
@@ -47,13 +58,27 @@ export default function AdminDocuments() {
   const verifiedCount = activeTenants.filter(t => t.documentsVerified).length;
   const pendingCount = activeTenants.filter(t => !t.documentsVerified).length;
 
- const handleVerifyDoc = (tenantId: string, docId: string) => {
-  verifyDocument(tenantId, docId); // ✅ bas call
+const handleVerifyDoc = async (tenantId: string, docId: string) => {
+  await verifyDocument(tenantId, docId);
+
+  // instant UI update
+  tenants.forEach((t) => {
+    if (t.id === tenantId) {
+      t.documentsVerified = true;
+    }
+  });
+
+  await fetchTenants();
 };
 
-const handleVerifyAll = (tenantId: string) => {
-  verifyAllDocuments(tenantId); // ✅ bas call
+const handleVerifyAll = async (tenantId: string) => {
+  await verifyAllDocuments(tenantId);
+  await fetchTenants();
+
+  console.log("Updated Tenants => ", tenants);
 };
+
+
 
   const tenantDocsStatus = useMemo(() => {
     return new Map(

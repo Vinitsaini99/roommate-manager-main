@@ -9,6 +9,7 @@ import {
   Clock,
   IndianRupee,
   Bell,
+  ArrowLeft
 } from "lucide-react";
 import { useData } from "@/contexts/DataContext";
 import { Button } from "@/components/ui/button";
@@ -508,13 +509,16 @@ Thank you
   return (
     <div className="space-y-4 md:space-y-6 animate-fade-in">
       <div className="page-header flex flex-col gap-4">
-        <div>
-          <h1 className="page-title">Payments & Electricity</h1>
-          <p className="page-subtitle">
-            Manage rent and electricity billing for all tenants
-          </p>
-        </div>
+        {currentView === "payments" && (
+    <div>
+      <h1 className="page-title">Payments & Electricity</h1>
+      <p className="page-subtitle">
+        Manage rent and electricity billing for all tenants
+      </p>
+    </div>
+  )}
         <div className="flex gap-2">
+          {currentView === "payments" && (
           <Dialog open={isAddingPayment} onOpenChange={setIsAddingPayment}>
             <DialogTrigger asChild>
               <Button className="gradient-primary w-full sm:w-auto">
@@ -633,15 +637,29 @@ Thank you
               </div>
             </DialogContent>
           </Dialog>
+          )}
 
-          <Button 
-            variant="outline" 
-            className="w-full sm:w-auto"
-            onClick={() => setCurrentView("history")}
-          >
-            <Search className="h-4 w-4 mr-2" />
-            Payment History
-          </Button>
+          <Button
+  variant="outline"
+  className="w-full sm:w-auto"
+  onClick={() =>
+    setCurrentView(currentView === "history" ? "payments" : "history")
+  }
+>
+  {currentView === "history" ? (
+    <>
+      <ArrowLeft className="h-4 w-4 mr-2" />
+      Back 
+    </>
+  ) : (
+    <>
+      <Search className="h-4 w-4 mr-2" />
+      Payment History
+    </>
+  )}
+</Button>
+          
+
         </div>
       </div>
 
@@ -1052,12 +1070,12 @@ return (
               <h2 className="text-2xl font-bold text-foreground">Payment History</h2>
               <p className="text-sm text-muted-foreground">All payment records sorted by latest date</p>
             </div>
-            <Button 
+            {/* <Button 
               variant="outline" 
               onClick={() => setCurrentView("payments")}
             >
               ← Back to Payments
-            </Button>
+            </Button> */}
           </div>
 
           {/* Room Filter - Above Table, Left Aligned */}
