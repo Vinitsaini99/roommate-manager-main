@@ -59,8 +59,8 @@ export default function Login() {
 
   const fillDemoCredentials = (role: "admin" | "tenant") => {
     if (role === "admin") {
-      setUsername("peter01");
-      setPassword("peter123");
+      setUsername("peter");
+      setPassword("Papp@123");
     } else {
       setUsername("tenant@example.com");
       setPassword("tenant123");

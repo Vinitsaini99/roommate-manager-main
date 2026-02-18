@@ -39,8 +39,12 @@ export default function AdminDashboard() {
   const availableRooms = totalRooms - occupiedRooms;
   const totalTenants = tenants.filter(t => t.isActive).length;
 
-  const paidPayments = payments.filter(p => p.status === 'paid');
-  const pendingPayments = payments.filter(p => p.status === 'pending');
+  // ✅ Active tenant IDs for filtering (must have room assigned)
+  const activeTenants = tenants.filter(t => t.isActive && t.roomPk !== null && t.roomPk !== undefined);
+  const activeTenantIds = new Set(activeTenants.map(t => String(t.id)));
+
+  const paidPayments = payments.filter(p => p.status === 'paid' && !p.hidden && activeTenantIds.has(String(p.tenant)));
+  const pendingPayments = payments.filter(p => p.status === 'pending' && !p.hidden && activeTenantIds.has(String(p.tenant)));
   
   const monthlyRevenue = paidPayments
     .filter(p => p.month === currentMonth && p.year === currentYear)

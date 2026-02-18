@@ -62,26 +62,44 @@ export default function AdminPayments() {
   } = useData();
   const { toast } = useToast();
 
-  // Get current year for dynamic display
   const currentYear = new Date().getFullYear();
-
+  
   const [searchQuery, setSearchQuery] = useState("");
-  const [filterStatus, setFilterStatus] = useState<"all" | "paid" | "pending">(
-    "all",
-  );
+  const [filterStatus, setFilterStatus] = useState<"all" | "paid" | "pending">("all");
   const [isAddingPayment, setIsAddingPayment] = useState(false);
   const [currentView, setCurrentView] = useState<"payments" | "history">("payments");
   const [historyFilterRoomPk, setHistoryFilterRoomPk] = useState<string | null>(null);
-  // Select a ROOM (unique) instead of tenant (avoid duplicates for double/triple rooms)
   const [selectedRoomPk, setSelectedRoomPk] = useState("");
   const [selectedMonth, setSelectedMonth] = useState("");
   const [prevReading, setPrevReading] = useState(0);
   const [currReading, setCurrReading] = useState(0);
+  // Persistent paid ledger stored in localStorage
+  const [paidLedger, setPaidLedger] = useState<{
+    id: string;
+    tenantId?: string;
+    tenantName?: string;
+    tenant?: string;
+    month?: string;
+    year?: number;
+    totalAmount?: number;
+    electricityAmount?: number;
+    rent?: number;
+    paidAt?: number;
+  }[]>(() => {
+    try {
+      const raw = localStorage.getItem("rentease_paid_ledger");
+      return raw ? JSON.parse(raw) : [];
+    } catch (e) {
+      return [];
+    }
+  });
 
-  // Filter active tenants with valid room assignments
-  const activeTenants = tenants.filter((t) => t.isActive && (t.roomId || t.roomPk));
+  // Set of paid ids for quick lookups (derived from ledger)
+  const [paidIds, setPaidIds] = useState<Set<string>>(() => new Set(paidLedger.map((x) => String(x.id))));
 
-  // Helpers to resolve tenant/room and bill breakdown
+  // All known bills (API + virtual bills created from ledger entries)
+  const [allKnownBills, setAllKnownBills] = useState<any[]>([]);
+
   const getTenantByBill = (bill: any) =>
     tenants.find((t) => t.id === bill.tenant);
 
@@ -137,11 +155,15 @@ export default function AdminPayments() {
     return `${names.slice(0, 2).join(", ")} +${names.length - 2} more (${names.length} tenants)`;
   };
 
-  const getUnits = (bill: any) => bill.current_reading - bill.previous_reading;
+  const getUnits = (bill: any) =>
+    Number(bill?.current_reading || 0) - Number(bill?.previous_reading || 0);
 
-  const getElectricityAmount = (bill: any) => getUnits(bill) * bill.unit_charge;
+  const getElectricityAmount = (bill: any) => getUnits(bill) * Number(bill?.unit_charge || 0);
 
-  // Unique occupied rooms list for dropdown
+  // ✅ Active tenants set for filtering (must have room assigned)
+  const activeTenants = tenants.filter((t) => t.roomPk !== null && t.roomPk !== undefined);
+  const activeTenantIds = new Set(activeTenants.map((t) => String(t.id)));
+
   const roomOptions = React.useMemo(() => {
     const roomPkSet = new Set<string>();
     const options: {
@@ -165,7 +187,6 @@ export default function AdminPayments() {
       roomPkSet.add(String(t.roomPk));
     }
 
-    // Sort by numeric part if possible
     return options.sort((a, b) => {
       const an = Number(String(a.roomIdLabel).replace(/\D/g, ""));
       const bn = Number(String(b.roomIdLabel).replace(/\D/g, ""));
@@ -174,26 +195,107 @@ export default function AdminPayments() {
     });
   }, [activeTenants, rooms]);
 
-  // Refresh payments on mount
+  // ✅ Helper to check if bill is paid (backend soft-delete OR in local ledger)
+  const isBillPaid = (bill: any) => {
+    if (!bill) return false;
+    return bill.record_status === "Deleted" || paidIds.has(String(bill.id));
+  };
+
   useEffect(() => {
     fetchPayments();
   }, [fetchPayments]);
 
-  const filteredPayments = payments.filter((p) => {
-    const tenant = tenants.find((t) => t.id === p.tenant);
+  // Keep paidIds in sync whenever ledger changes
+  useEffect(() => {
+    setPaidIds(new Set(paidLedger.map((x) => String(x.id))));
+    try {
+      localStorage.setItem("rentease_paid_ledger", JSON.stringify(paidLedger));
+    } catch (e) {
+      // ignore
+    }
+  }, [paidLedger]);
 
-    // If search query is empty, match all
-    const matchesSearch =
-      searchQuery === "" ||
-      (tenant
-        ? `${tenant.firstName} ${tenant.lastName}`
-            .toLowerCase()
-            .includes(searchQuery.toLowerCase())
-        : false);
+  // Merge API payments with ledger to maintain a complete list of known bills
+  useEffect(() => {
+    const map = new Map<string, any>();
 
-    const matchesStatus = filterStatus === "all" || p.status === filterStatus;
-    return matchesSearch && matchesStatus;
-  });
+    // start with previous allKnownBills to preserve cached snapshots
+    for (const b of allKnownBills) {
+      if (b && b.id != null) map.set(String(b.id), b);
+    }
+
+    // overlay API payments
+    for (const p of payments) {
+      if (p && p.id != null) map.set(String(p.id), p);
+    }
+
+    // ensure ledger entries exist as paid records
+    for (const entry of paidLedger) {
+      const id = String(entry.id);
+      if (!map.has(id)) {
+        // create a virtual paid bill from ledger snapshot
+        map.set(id, {
+          id: entry.id,
+          tenant: entry.tenantId || entry.tenant, // handle both old and new formats
+          tenantId: entry.tenantId,
+          month: entry.month,
+          year: entry.year,
+          record_status: "Deleted",
+          status: "paid",
+          totalAmount: entry.totalAmount,
+          amount: entry.totalAmount,
+          previous_reading: undefined,
+          current_reading: undefined,
+          unit_charge: undefined,
+        });
+      } else {
+        // if exists, mark it as paid if ledger says so
+        const existing = map.get(id);
+        map.set(id, { ...existing, record_status: "Deleted", status: "paid", tenantId: entry.tenantId });
+      }
+    }
+
+    setAllKnownBills(Array.from(map.values()));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [payments, paidLedger]);
+
+  // ✅ Filter payments based on search and status filters - ONLY active tenants
+  const filteredPayments = React.useMemo(() => {
+    const searchLower = searchQuery.trim().toLowerCase();
+
+    // Visible pending = API bills for active tenants only
+    const visiblePending = payments
+      .filter((p) => !isBillPaid(p) && !p.hidden && activeTenantIds.has(String(p.tenant)))
+      .map((p) => ({ ...p }));
+
+    // Visible paid = ledger bills for active tenants only
+    const visiblePaid = allKnownBills.filter(
+      (p) => isBillPaid(p) && activeTenantIds.has(String(p.tenantId || p.tenant))
+    );
+
+    // Combined visible payments
+    let visiblePayments: any[] = [];
+    if (filterStatus === "pending") visiblePayments = visiblePending;
+    else if (filterStatus === "paid") visiblePayments = visiblePaid;
+    else visiblePayments = [...visiblePending, ...visiblePaid];
+
+    // de-duplicate by id
+    const seen = new Set<string>();
+    visiblePayments = visiblePayments.filter((item) => {
+      if (!item || item.id == null) return false;
+      const id = String(item.id);
+      if (seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
+
+    return visiblePayments.filter((p) => {
+      const tenant = tenants.find((t) => t.id === p.tenant || t.id === p.tenantId);
+      if (!searchLower) return true;
+      if (!tenant) return false;
+      return `${tenant.firstName} ${tenant.lastName}`.toLowerCase().includes(searchLower);
+    });
+  }, [payments, allKnownBills, tenants, searchQuery, filterStatus, isBillPaid, activeTenantIds]);
 
   const tenantsInSelectedRoom = React.useMemo(() => {
     if (!selectedRoomPk) return [];
@@ -202,7 +304,6 @@ export default function AdminPayments() {
     );
   }, [activeTenants, selectedRoomPk]);
 
-  // Backend needs a tenant FK; we pick the first active tenant from that room.
   const selectedTenant = tenantsInSelectedRoom[0];
   const selectedRoom = rooms.find(
     (r) => String(r.id) === String(selectedRoomPk),
@@ -212,7 +313,6 @@ export default function AdminPayments() {
   const electricityAmount = unitsUsed * settings.electricityRate;
   const totalBill = (selectedRoom?.rent || 0) + electricityAmount;
 
-  // ✅ Hide months that already have a bill for the selected room (any status)
   const usedMonthsForSelectedRoom = React.useMemo(() => {
     if (!selectedRoomPk) return new Set<string>();
 
@@ -231,10 +331,9 @@ export default function AdminPayments() {
 
   const getRoomNumber = (roomId?: string | number) => {
     if (!roomId) return "—";
-    return String(roomId); // ✅ Direct room number (1, 2, 3, ...)
+    return String(roomId);
   };
 
-  // 🔁 Auto-fill previous reading from latest bill of this room (if any)
   useEffect(() => {
     if (!selectedRoomPk) {
       setPrevReading(0);
@@ -270,11 +369,9 @@ export default function AdminPayments() {
     setPrevReading(latest.current_reading || 0);
   }, [selectedRoomPk, payments, tenants]);
 
-  // Build room options for Payment History filter
   const historyRoomFilterOptions = React.useMemo(() => {
     const roomPaymentMap = new Map<string, { room: any; count: number }>();
 
-    // Group payments by room
     for (const p of payments) {
       const tenant = tenants.find((t) => t.id === p.tenant);
       if (!tenant?.roomPk) continue;
@@ -289,7 +386,6 @@ export default function AdminPayments() {
       entry.count += 1;
     }
 
-    // Convert to options array and sort
     const options = Array.from(roomPaymentMap.values()).map((entry) => ({
       roomPk: String(entry.room.id),
       roomId: entry.room.roomId || String(entry.room.id),
@@ -304,13 +400,25 @@ export default function AdminPayments() {
     });
   }, [payments, tenants, rooms]);
 
-  // Filter payments for history view
   const filteredHistoryPayments = React.useMemo(() => {
-    let result = [...payments];
+    // ✅ History should come only from local ledger (paid records, regardless of tenant status/room)
+    let result = paidLedger.map((e) => ({
+      id: e.id,
+      tenant: e.tenantId || e.tenant, // handle both old and new ledger formats
+      tenantName: e.tenantName,
+      month: e.month,
+      year: e.year,
+      totalAmount: e.totalAmount,
+      record_status: "Deleted",
+      status: "paid",
+      paidAt: e.paidAt,
+    } as any));
     if (historyFilterRoomPk) {
       result = result.filter((p) => {
-        const tenant = tenants.find((t) => t.id === p.tenant);
-        return tenant && String(tenant.roomPk) === String(historyFilterRoomPk);
+        const tenant = tenants.find((t) => String(t.id) === String(p.tenant));
+        // Include if tenant is found and matches room, but also include if tenant not found
+        // (tenant may have left, but we keep ledger history forever)
+        return !tenant || String(tenant.roomPk) === String(historyFilterRoomPk);
       });
     }
     return result.sort((a, b) => {
@@ -318,7 +426,7 @@ export default function AdminPayments() {
       const db = new Date(b.date_month || `${b.year || currentYear}-01-01`).getTime();
       return db - da;
     });
-  }, [payments, tenants, historyFilterRoomPk, currentYear]);
+  }, [paidLedger, tenants, historyFilterRoomPk, currentYear]);
 
   const handleAddPayment = () => {
     if (!selectedTenant || !selectedMonth) {
@@ -344,7 +452,6 @@ export default function AdminPayments() {
     const totalAmount = (selectedRoom?.rent || 0) + electricityAmount;
     const monthIndex = months.indexOf(selectedMonth) + 1;
 
-    // ❌ Block duplicate payment for same ROOM + MONTH + YEAR
     const hasExistingForRoomAndMonth = payments.some((p) => {
       const t = tenants.find((tt) => tt.id === p.tenant);
       if (!t) return false;
@@ -368,7 +475,6 @@ export default function AdminPayments() {
     }
 
     addPayment({
-      // ✅ Backend ElectricityBill fields only
       tenant: selectedTenant.id,
       date_month: `${currentYear}-${String(monthIndex).padStart(2, "0")}-01`,
       previous_reading: prevReading,
@@ -376,11 +482,8 @@ export default function AdminPayments() {
       unit_charge: settings.electricityRate,
       remarks: "",
       extra: {},
-
-      // (Optional UI helpers — backend will ignore because DataContext maps payload)
       month: selectedMonth,
       year: currentYear,
-      status: "pending",
     });
 
     toast({
@@ -398,32 +501,58 @@ export default function AdminPayments() {
     setCurrReading(0);
   };
 
- const handleMarkAsPaid = async (paymentId: string) => {
-  try {
-    await updatePayment(paymentId, {
-      status: "paid", // 👈 THIS FIXES 400
+  // ✅ UPDATED: Mark Paid karke History view pe redirect karo
+  const handleMarkAsPaid = async (paymentId: string) => {
+    // Find the bill snapshot from API or cached known bills
+    const bill = payments.find((p) => String(p.id) === String(paymentId)) ||
+      allKnownBills.find((p) => String(p.id) === String(paymentId));
+
+    // Build ledger entry (persist BEFORE calling server)
+    const room = bill ? getRoomByBill(bill) : undefined;
+    const electricityAmount = bill ? getElectricityAmount(bill) : 0;
+    const rent = room?.rent || 0;
+    const totalAmount = bill ? (bill.totalAmount ?? bill.amount ?? (electricityAmount + rent)) : 0;
+
+    const tenantRecord = bill ? tenants.find((t) => t.id === bill.tenant) : null;
+    const ledgerEntry = {
+      id: String(paymentId),
+      tenantId: String(bill?.tenant),
+      tenantName: tenantRecord ? `${tenantRecord.firstName} ${tenantRecord.lastName}`.trim() : "Unknown",
+      month: bill?.month,
+      year: bill?.year,
+      totalAmount,
+      electricityAmount,
+      rent,
+      paidAt: Date.now(),
+    };
+
+    setPaidLedger((prev) => {
+      const exists = prev.find((x) => String(x.id) === String(paymentId));
+      if (exists) {
+        return prev.map((x) => (String(x.id) === String(paymentId) ? { ...x, ...ledgerEntry } : x));
+      }
+      return [...prev, ledgerEntry];
     });
 
-    await fetchPayments();
-
+    // Immediately switch to history view and show toast
+    setCurrentView("history");
+    setHistoryFilterRoomPk(null);
     toast({
-      title: "Payment updated",
-      description: "Payment has been marked as paid.",
+      title: "Payment marked as paid",
+      description: "Saved to local ledger and updating server...",
     });
-  } catch (err) {
-    toast({
-      title: "Update failed",
-      description: "Backend rejected the request",
-      variant: "destructive",
-    });
-  }
-};
 
-
-
-
-
-
+    // 🔥 BACKEND UPDATE (background) - best-effort
+    try {
+      await updatePayment(paymentId, { record_status: "Deleted" } as any);
+    } catch (err) {
+      toast({
+        title: "Server error",
+        description: "Failed to update payment on server. Local ledger saved.",
+        variant: "destructive",
+      });
+    }
+  };
 
   const handleSendReminder = (paymentId: string, tenantName: string) => {
     sendPaymentReminder(paymentId);
@@ -433,11 +562,16 @@ export default function AdminPayments() {
     });
   };
 
-  const paidCount = payments.filter((p) => p.status === "paid").length;
-  const pendingCount = payments.filter((p) => p.status === "pending").length;
-  const totalCollected = payments
-    .filter((p) => p.status === "paid")
-    .reduce((sum, p) => sum + (p.totalAmount ?? p.amount ?? 0), 0);
+  // Stats calculated from ONLY visible payments (active tenants)
+  const visiblePending = filteredPayments.filter((p) => !isBillPaid(p));
+  const visiblePaid = filteredPayments.filter((p) => isBillPaid(p));
+
+  const paidCount = visiblePaid.length;
+  const pendingCount = visiblePending.length;
+  const totalCollected = visiblePaid.reduce(
+    (sum, p) => sum + (p.totalAmount ?? p.amount ?? 0),
+    0,
+  );
 
   const sendWhatsAppReminder = (
     phone: string,
@@ -465,7 +599,6 @@ export default function AdminPayments() {
     if (cleanPhone.startsWith("91")) cleanPhone = cleanPhone.substring(2);
     if (cleanPhone.length === 10) cleanPhone = "91" + cleanPhone;
 
-    // ✅ UPI Payment Link
     const upiLink = `upi://pay?pa=${UPI_CONFIG.upiId}&pn=${encodeURIComponent(
       UPI_CONFIG.payeeName,
     )}&am=${amount}&cu=INR&tn=${encodeURIComponent(
@@ -504,162 +637,158 @@ Thank you
     );
   };
 
-  // const tenant = tenants.find(t => t.id === payment.tenantId);
-
   return (
     <div className="space-y-4 md:space-y-6 animate-fade-in">
       <div className="page-header flex flex-col gap-4">
         {currentView === "payments" && (
-    <div>
-      <h1 className="page-title">Payments & Electricity</h1>
-      <p className="page-subtitle">
-        Manage rent and electricity billing for all tenants
-      </p>
-    </div>
-  )}
+          <div>
+            <h1 className="page-title">Payments & Electricity</h1>
+            <p className="page-subtitle">
+              Manage rent and electricity billing for all tenants
+            </p>
+          </div>
+        )}
         <div className="flex gap-2">
           {currentView === "payments" && (
-          <Dialog open={isAddingPayment} onOpenChange={setIsAddingPayment}>
-            <DialogTrigger asChild>
-              <Button className="gradient-primary w-full sm:w-auto">
-                <Plus className="h-4 w-4 mr-2" />
-                Add Payment Entry
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
-              <DialogHeader>
-                <DialogTitle>Add Payment Entry</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4 md:space-y-6 pt-4">
-                <div className="space-y-2">
-                  <Label>Select Room</Label>
-                  <Select
-                    value={selectedRoomPk}
-                    onValueChange={setSelectedRoomPk}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Choose room..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {roomOptions.map((r) => (
-                        <SelectItem key={r.roomPk} value={r.roomPk}>
-                          {r.roomIdLabel}{" "}
-                          {r.occupants > 1 ? `(${r.occupants} tenants)` : ""}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Month</Label>
-                  <Select value={selectedMonth} onValueChange={setSelectedMonth}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select month..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {months
-                        .filter(
-                          (m) => !usedMonthsForSelectedRoom.has(m.toLowerCase()),
-                        )
-                        .map((m) => (
-                          <SelectItem key={m} value={m}>
-                            {m} {currentYear}
+            <Dialog open={isAddingPayment} onOpenChange={setIsAddingPayment}>
+              <DialogTrigger asChild>
+                <Button className="gradient-primary w-full sm:w-auto">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Payment Entry
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle>Add Payment Entry</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4 md:space-y-6 pt-4">
+                  <div className="space-y-2">
+                    <Label>Select Room</Label>
+                    <Select
+                      value={selectedRoomPk}
+                      onValueChange={setSelectedRoomPk}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Choose room..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {roomOptions.map((r) => (
+                          <SelectItem key={r.roomPk} value={r.roomPk}>
+                            {r.roomIdLabel}{" "}
+                            {r.occupants > 1 ? `(${r.occupants} tenants)` : ""}
                           </SelectItem>
                         ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+                      </SelectContent>
+                    </Select>
+                  </div>
 
-                <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label>Previous Reading</Label>
-                    <Input
-                      type="number"
-                      value={prevReading}
-                      onChange={(e) => setPrevReading(Number(e.target.value))}
-                    />
+                    <Label>Month</Label>
+                    <Select value={selectedMonth} onValueChange={setSelectedMonth}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select month..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {months
+                          .filter(
+                            (m) => !usedMonthsForSelectedRoom.has(m.toLowerCase()),
+                          )
+                          .map((m) => (
+                            <SelectItem key={m} value={m}>
+                              {m} {currentYear}
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
                   </div>
-                  <div className="space-y-2">
-                    <Label>Current Reading</Label>
-                    <Input
-                      type="number"
-                      value={currReading}
-                      onChange={(e) => setCurrReading(Number(e.target.value))}
-                    />
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>Previous Reading</Label>
+                      <Input
+                        type="number"
+                        value={prevReading}
+                        onChange={(e) => setPrevReading(Number(e.target.value))}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Current Reading</Label>
+                      <Input
+                        type="number"
+                        value={currReading}
+                        onChange={(e) => setCurrReading(Number(e.target.value))}
+                      />
+                    </div>
+                  </div>
+
+                  {selectedTenant && (
+                    <div className="bg-muted/50 rounded-xl p-4 space-y-3">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Units Used:</span>
+                        <span className="font-medium">{unitsUsed} units</span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">
+                          Electricity (₹{settings.electricityRate}/unit):
+                        </span>
+                        <span className="font-medium">
+                          {formatCurrency(electricityAmount)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Room Rent:</span>
+                        <span className="font-medium">
+                          {formatCurrency(selectedRoom?.rent || 0)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-base pt-2 border-t border-border">
+                        <span className="font-medium">Total Bill:</span>
+                        <span className="font-bold text-primary">
+                          {formatCurrency(totalBill)}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex flex-col sm:flex-row justify-end gap-3">
+                    <Button
+                      variant="outline"
+                      onClick={() => setIsAddingPayment(false)}
+                      className="w-full sm:w-auto"
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      onClick={handleAddPayment}
+                      className="gradient-primary w-full sm:w-auto"
+                    >
+                      Add Entry
+                    </Button>
                   </div>
                 </div>
-
-                {selectedTenant && (
-                  <div className="bg-muted/50 rounded-xl p-4 space-y-3">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Units Used:</span>
-                      <span className="font-medium">{unitsUsed} units</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">
-                        Electricity (₹{settings.electricityRate}/unit):
-                      </span>
-                      <span className="font-medium">
-                        {formatCurrency(electricityAmount)}
-                      </span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Room Rent:</span>
-                      <span className="font-medium">
-                        {formatCurrency(selectedRoom?.rent || 0)}
-                      </span>
-                    </div>
-                    <div className="flex justify-between text-base pt-2 border-t border-border">
-                      <span className="font-medium">Total Bill:</span>
-                      <span className="font-bold text-primary">
-                        {formatCurrency(totalBill)}
-                      </span>
-                    </div>
-                  </div>
-                )}
-
-                <div className="flex flex-col sm:flex-row justify-end gap-3 ">
-                  <Button
-                    variant="outline"
-                    onClick={() => setIsAddingPayment(false)}
-                    className="w-full sm:w-auto"
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    onClick={handleAddPayment}
-                    className="gradient-primary w-full sm:w-auto"
-                  >
-                    Add Entry
-                  </Button>
-                </div>
-              </div>
-            </DialogContent>
-          </Dialog>
+              </DialogContent>
+            </Dialog>
           )}
 
           <Button
-  variant="outline"
-  className="w-full sm:w-auto"
-  onClick={() =>
-    setCurrentView(currentView === "history" ? "payments" : "history")
-  }
->
-  {currentView === "history" ? (
-    <>
-      <ArrowLeft className="h-4 w-4 mr-2" />
-      Back 
-    </>
-  ) : (
-    <>
-      <Search className="h-4 w-4 mr-2" />
-      Payment History
-    </>
-  )}
-</Button>
-          
-
+            variant="outline"
+            className="w-full sm:w-auto"
+            onClick={() =>
+              setCurrentView(currentView === "history" ? "payments" : "history")
+            }
+          >
+            {currentView === "history" ? (
+              <>
+                <ArrowLeft className="h-4 w-4 mr-2" />
+                Back
+              </>
+            ) : (
+              <>
+                <Search className="h-4 w-4 mr-2" />
+                Payment History
+              </>
+            )}
+          </Button>
         </div>
       </div>
 
@@ -696,369 +825,326 @@ Thank you
             </div>
           </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
+          {/* Stats */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
+            <div
+              className={cn(
+                "stat-card flex items-center gap-3 md:gap-4 cursor-pointer",
+                filterStatus === "all" && "ring-2 ring-primary"
+              )}
+              onClick={() => setFilterStatus("all")}
+            >
+              <div className="h-10 w-10 md:h-12 md:w-12 rounded-xl bg-primary/10 flex items-center justify-center">
+                <CreditCard className="h-5 w-5 md:h-6 md:w-6 text-primary" />
+              </div>
+              <div>
+                <p className="text-lg md:text-2xl font-bold">{pendingCount + paidCount}</p>
+                <p className="text-xs md:text-sm text-muted-foreground">Total</p>
+              </div>
+            </div>
 
-  {/* TOTAL */}
-  <div
-    className={cn(
-      "stat-card flex items-center gap-3 md:gap-4 cursor-pointer",
-      filterStatus === "all" && "ring-2 ring-primary"
-    )}
-    onClick={() => setFilterStatus("all")}
-  >
-    <div className="h-10 w-10 md:h-12 md:w-12 rounded-xl bg-primary/10 flex items-center justify-center">
-      <CreditCard className="h-5 w-5 md:h-6 md:w-6 text-primary" />
-    </div>
-    <div>
-      <p className="text-lg md:text-2xl font-bold">
-        {payments.length}
-      </p>
-      <p className="text-xs md:text-sm text-muted-foreground">
-        Total
-      </p>
-    </div>
-  </div>
+            <div
+              className={cn(
+                "stat-card flex items-center gap-3 md:gap-4 cursor-pointer",
+                filterStatus === "paid" && "ring-2 ring-success"
+              )}
+              onClick={() => setFilterStatus("paid")}
+            >
+              <div className="h-10 w-10 md:h-12 md:w-12 rounded-xl bg-success/10 flex items-center justify-center">
+                <CheckCircle className="h-5 w-5 md:h-6 md:w-6 text-success" />
+              </div>
+              <div>
+                <p className="text-lg md:text-2xl font-bold text-success">{paidCount}</p>
+                <p className="text-xs md:text-sm text-muted-foreground">Paid</p>
+              </div>
+            </div>
 
-  {/* PAID */}
-  <div
-    className={cn(
-      "stat-card flex items-center gap-3 md:gap-4 cursor-pointer",
-      filterStatus === "paid" && "ring-2 ring-success"
-    )}
-    onClick={() => setFilterStatus("paid")}
-  >
-    <div className="h-10 w-10 md:h-12 md:w-12 rounded-xl bg-success/10 flex items-center justify-center">
-      <CheckCircle className="h-5 w-5 md:h-6 md:w-6 text-success" />
-    </div>
-    <div>
-      <p className="text-lg md:text-2xl font-bold text-success">
-        {paidCount}
-      </p>
-      <p className="text-xs md:text-sm text-muted-foreground">
-        Paid
-      </p>
-    </div>
-  </div>
+            <div
+              className={cn(
+                "stat-card flex items-center gap-3 md:gap-4 cursor-pointer",
+                filterStatus === "pending" && "ring-2 ring-warning"
+              )}
+              onClick={() => setFilterStatus("pending")}
+            >
+              <div className="h-10 w-10 md:h-12 md:w-12 rounded-xl bg-warning/10 flex items-center justify-center">
+                <Clock className="h-5 w-5 md:h-6 md:w-6 text-warning" />
+              </div>
+              <div>
+                <p className="text-lg md:text-2xl font-bold text-warning">{pendingCount}</p>
+                <p className="text-xs md:text-sm text-muted-foreground">Pending</p>
+              </div>
+            </div>
 
-  {/* PENDING */}
-  <div
-    className={cn(
-      "stat-card flex items-center gap-3 md:gap-4 cursor-pointer",
-      filterStatus === "pending" && "ring-2 ring-warning"
-    )}
-    onClick={() => setFilterStatus("pending")}
-  >
-    <div className="h-10 w-10 md:h-12 md:w-12 rounded-xl bg-warning/10 flex items-center justify-center">
-      <Clock className="h-5 w-5 md:h-6 md:w-6 text-warning" />
-    </div>
-    <div>
-      <p className="text-lg md:text-2xl font-bold text-warning">
-        {pendingCount}
-      </p>
-      <p className="text-xs md:text-sm text-muted-foreground">
-        Pending
-      </p>
-    </div>
-  </div>
+            <div className="stat-card flex items-center gap-3 md:gap-4">
+              <div className="h-10 w-10 md:h-12 md:w-12 rounded-xl bg-success/10 flex items-center justify-center">
+                <IndianRupee className="h-5 w-5 md:h-6 md:w-6 text-success" />
+              </div>
+              <div>
+                <p className="text-base md:text-xl font-bold text-success">
+                  {formatCurrency(totalCollected)}
+                </p>
+                <p className="text-xs md:text-sm text-muted-foreground">Collected</p>
+              </div>
+            </div>
+          </div>
 
-  {/* COLLECTED */}
-  <div className="stat-card flex items-center gap-3 md:gap-4">
-  <div className="h-10 w-10 md:h-12 md:w-12 rounded-xl bg-success/10 flex items-center justify-center">
-    <IndianRupee className="h-5 w-5 md:h-6 md:w-6 text-success" />
-  </div>
-  <div>
-    <p className="text-base md:text-xl font-bold text-success">
-      {formatCurrency(totalCollected)}
-    </p>
-    <p className="text-xs md:text-sm text-muted-foreground">
-      Collected
-    </p>
-  </div>
-</div>
-
-
-</div>
-
-        {/* Payments Table - Mobile Cards + Desktop Table */}
-        <div className="stat-card overflow-hidden p-0">
-        {/* Desktop Table */}
-        <div className="hidden md:block overflow-x-auto">
-          <table className="data-table">
-            <thead>
-              <tr>
-                {/* <th>Tenant</th> */}
-                <th>Room</th>
-                <th>Month</th>
-                <th>Units</th>
-                <th>Electricity</th>
-                <th>Rent</th>
-                <th>Total</th>
-                <th>Status</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredPayments.map((bill) => {
-                const room = getRoomByBill(bill);
-                const units = getUnits(bill);
-                const electricity = getElectricityAmount(bill);
-                const total = electricity + (room?.rent || 0);
-                // console.log("STATUS CHECK 👉", bill.status, bill.record_status);
-const isPaid = bill.status === "paid";
-
-
-
-return (
-  <tr key={bill.id}>
-                    {/* 🔥 ROOM FIRST (with tenant count) */}
-                    <td className="font-medium">{getRoomLabelByBill(bill)}</td>
-
-                    <td>
-                      {formatMonth(bill.month || "May", bill.year || 2026)}
-                    </td>
-                    <td>{units}</td>
-                    <td>{formatCurrency(electricity)}</td>
-                    <td>{formatCurrency(room?.rent || 0)}</td>
-                    <td>{formatCurrency(total)}</td>
-
-                    <td>
-                     <span
-  className={cn(
-    "status-badge text-xs",
-    isPaid ? "status-paid" : "status-pending"
-  )}
->
-  {isPaid ? "Paid" : "Pending"}
-</span>
-
-
-                    </td>
-
-                    <td>
-  <div className="flex gap-2">
-    {/* Mark Paid */}
-  <Button
-  size="sm"
-  variant="outline"
-  disabled={isPaid}
-  onClick={() => handleMarkAsPaid(bill.id)}
->
-  {isPaid ? "Paid" : "Mark Paid"}
-
-</Button>
-
-
-    {/* 🔔 Send Reminder */}
-    <Button
-      size="sm"
-      variant="ghost"
-      onClick={() => {
-        const tenant = getPrimaryTenantByBill(bill);
-        if (!tenant?.phone) {
-          toast({
-            title: "Error",
-            description: "Tenant phone not found",
-            variant: "destructive",
-          });
-          return;
-        }
-        
-        const room = getRoomByBill(bill);
-        const units = getUnits(bill);
-        const electricity = getElectricityAmount(bill);
-        const total = electricity + (room?.rent || 0);
-
-        sendWhatsAppReminder(
-          tenant.phone,
-          `${tenant.firstName} ${tenant.lastName}`,
-          room?.roomId || "",
-          formatMonth(bill.month || "May", bill.year || 2026),
-          total,
-          bill.previous_reading,
-          bill.current_reading,
-          units,
-          electricity,
-          room?.rent || 0,
-          toast
-        );
-      }}
-    >
-      <Bell className="h-4 w-4" />
-    </Button>
-  </div>
-</td>
-
+          {/* Payments Table */}
+          <div className="stat-card overflow-hidden p-0">
+            {/* Desktop Table */}
+            <div className="hidden md:block overflow-x-auto">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Room</th>
+                    <th>Month</th>
+                    <th>Units</th>
+                    <th>Electricity</th>
+                    <th>Rent</th>
+                    <th>Total</th>
+                    <th>Status</th>
+                    <th>Actions</th>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                </thead>
+                <tbody>
+                  {filteredPayments.map((bill) => {
+                    const room = getRoomByBill(bill);
+                    const units = getUnits(bill);
+                    const electricity = getElectricityAmount(bill);
+                    const total = electricity + (room?.rent || 0);
 
-        {/* Mobile Cards */}
-        <div className="md:hidden p-4 space-y-3">
-          {filteredPayments.map((payment) => {
-            const tenant = getTenantByBill(payment);
-            const room = getRoomByBill(payment);
-            const units = getUnits(payment);
-            const electricity = getElectricityAmount(payment);
+                    return (
+                      <tr key={bill.id}>
+                        <td className="font-medium">{getRoomLabelByBill(bill)}</td>
+                        <td>{formatMonth(bill.month || "May", bill.year || 2026)}</td>
+                        <td>{units}</td>
+                        <td>{formatCurrency(electricity)}</td>
+                        <td>{formatCurrency(room?.rent || 0)}</td>
+                        <td>{formatCurrency(total)}</td>
+                        <td>
+                          <span
+                            className={cn(
+                              "status-badge text-xs",
+                              isBillPaid(bill) ? "status-paid" : "status-pending"
+                            )}
+                          >
+                            {isBillPaid(bill) ? "Paid" : "Pending"}
+                          </span>
+                        </td>
+                        <td>
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={isBillPaid(bill)}
+                              onClick={() => handleMarkAsPaid(bill.id)}
+                            >
+                              {isBillPaid(bill) ? "Paid" : "Mark Paid"}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => {
+                                const tenant = getPrimaryTenantByBill(bill);
+                                if (!tenant?.phone) {
+                                  toast({
+                                    title: "Error",
+                                    description: "Tenant phone not found",
+                                    variant: "destructive",
+                                  });
+                                  return;
+                                }
+                                const room = getRoomByBill(bill);
+                                const units = getUnits(bill);
+                                const electricity = getElectricityAmount(bill);
+                                const total = electricity + (room?.rent || 0);
 
-            return (
-              <div
-                key={payment.id}
-                className={cn(
-                  "p-4 rounded-xl border",
-                  payment.status === "paid"
-                    ? "bg-success/5 border-success/20"
-                    : "bg-warning/5 border-warning/20",
-                )}
-              >
-                <div className="flex items-start justify-between mb-3">
-                  <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-full gradient-primary flex items-center justify-center">
-                      <span className="text-sm font-medium text-primary-foreground">
-                        {tenant
-                          ? `${tenant.firstName} ${tenant.lastName}`.charAt(0)
-                          : "—"}
-                      </span>
-                    </div>
-                    <div>
-                      <p className="font-medium">
-                        {getRoomLabelByBill(payment)}
-                      </p>
-                      <p className="text-sm text-muted-foreground">
-                        {getRoomTenantsLabelByBill(payment)}
-                      </p>
-                    </div>
-                  </div>
-                  <span
+                                sendWhatsAppReminder(
+                                  tenant.phone,
+                                  `${tenant.firstName} ${tenant.lastName}`,
+                                  room?.roomId || "",
+                                  formatMonth(bill.month || "May", bill.year || 2026),
+                                  total,
+                                  bill.previous_reading,
+                                  bill.current_reading,
+                                  units,
+                                  electricity,
+                                  room?.rent || 0,
+                                  toast
+                                );
+                              }}
+                            >
+                              <Bell className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile Cards */}
+            <div className="md:hidden p-4 space-y-3">
+              {filteredPayments.map((payment) => {
+                const tenant = getTenantByBill(payment);
+                const room = getRoomByBill(payment);
+                const units = getUnits(payment);
+                const electricity = getElectricityAmount(payment);
+
+                return (
+                  <div
+                    key={payment.id}
                     className={cn(
-                      "status-badge text-xs",
-                      payment.status === "paid"
-                        ? "status-paid"
-                        : "status-pending",
+                      "p-4 rounded-xl border",
+                      isBillPaid(payment)
+                        ? "bg-success/5 border-success/20"
+                        : "bg-warning/5 border-warning/20",
                     )}
                   >
-                    {payment.status === "paid" ? "Paid" : "Pending"}
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2 text-sm mb-3">
-                  <div>
-                    <span className="text-muted-foreground">Month:</span>
-                    <span className="ml-1 font-medium">{payment.month}</span>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">Units:</span>
-                    <span className="ml-1 font-medium">{payment.units}</span>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">Rent:</span>
-                    <span className="ml-1 font-medium">
-                      {formatCurrency(room?.rent || 0)}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">Electric:</span>
-                    <span className="ml-1 font-medium">
-                      {formatCurrency(electricity)}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between pt-3 border-t border-border/50">
-                  <div>
-                    <span className="text-sm text-muted-foreground">
-                      Total:
-                    </span>
-                    <span className="ml-2 text-lg font-bold text-primary">
-                      {formatCurrency(payment.amount)}
-                    </span>
-                  </div>
-                  {payment.status === "pending" && (
-                    <div className="flex gap-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleMarkAsPaid(payment.id)}
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="flex items-center gap-3">
+                        <div className="h-10 w-10 rounded-full gradient-primary flex items-center justify-center">
+                          <span className="text-sm font-medium text-primary-foreground">
+                            {tenant
+                              ? `${tenant.firstName} ${tenant.lastName}`.charAt(0)
+                              : "—"}
+                          </span>
+                        </div>
+                        <div>
+                          <p className="font-medium">{getRoomLabelByBill(payment)}</p>
+                          <p className="text-sm text-muted-foreground">
+                            {getRoomTenantsLabelByBill(payment)}
+                          </p>
+                        </div>
+                      </div>
+                      <span
+                        className={cn(
+                          "status-badge text-xs",
+                          isBillPaid(payment) ? "status-paid" : "status-pending",
+                        )}
                       >
-                        Mark Paid
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => {
-                          if (!tenant) {
-                            toast({
-                              title: "Error",
-                              description: "Tenant not found",
-                              variant: "destructive",
-                            });
-                            return;
-                          }
-
-                          if (!tenant.phone) {
-                            toast({
-                              title: "Error",
-                              description: `No phone number for ${tenant.firstName} ${tenant.lastName}`,
-                              variant: "destructive",
-                            });
-                            return;
-                          }
-
-                          sendWhatsAppReminder(
-                            tenant.phone,
-                            `${tenant.firstName} ${tenant.lastName}`,
-                            room?.roomId || "",
-                            payment.month,
-                            payment.amount,
-                            payment.previous_reading,
-                            payment.current_reading,
-                            payment.units,
-                            electricity,
-                            room?.rent || 0,
-                            toast,
-                          );
-
-                          sendPaymentReminder(payment.id);
-
-                          toast({
-                            title: "Reminder Sent",
-                            description: `WhatsApp reminder sent to ${tenant.firstName}`,
-                          });
-                        }}
-                        disabled={payment.reminder_sent}
-                      >
-                        <Bell
-                          className={cn(
-                            "h-4 w-4",
-                            payment.reminder_sent && "text-muted-foreground",
-                          )}
-                        />
-                      </Button>
+                        {isBillPaid(payment) ? "Paid" : "Pending"}
+                      </span>
                     </div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
 
-        {filteredPayments.length === 0 && (
-          <div className="flex flex-col items-center justify-center py-12 text-center">
-            <div className="h-16 w-16 rounded-full bg-muted flex items-center justify-center mb-4">
-              <CreditCard className="h-8 w-8 text-muted-foreground" />
+                    <div className="grid grid-cols-2 gap-2 text-sm mb-3">
+                      <div>
+                        <span className="text-muted-foreground">Month:</span>
+                        <span className="ml-1 font-medium">{payment.month}</span>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Units:</span>
+                        <span className="ml-1 font-medium">{payment.units}</span>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Rent:</span>
+                        <span className="ml-1 font-medium">
+                          {formatCurrency(room?.rent || 0)}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Electric:</span>
+                        <span className="ml-1 font-medium">
+                          {formatCurrency(electricity)}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-3 border-t border-border/50">
+                      <div>
+                        <span className="text-sm text-muted-foreground">Total:</span>
+                        {(() => {
+                          const room = getRoomByBill(payment);
+                          const amount = payment.totalAmount ?? payment.amount ?? (getElectricityAmount(payment) + (room?.rent || 0));
+                          return (
+                            <span className="ml-2 text-lg font-bold text-primary">
+                              {formatCurrency(amount)}
+                            </span>
+                          );
+                        })()}
+                      </div>
+                      {!isBillPaid(payment) && (
+                        <div className="flex gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleMarkAsPaid(payment.id)}
+                          >
+                            Mark Paid
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => {
+                              if (!tenant) {
+                                toast({
+                                  title: "Error",
+                                  description: "Tenant not found",
+                                  variant: "destructive",
+                                });
+                                return;
+                              }
+
+                              if (!tenant.phone) {
+                                toast({
+                                  title: "Error",
+                                  description: `No phone number for ${tenant.firstName} ${tenant.lastName}`,
+                                  variant: "destructive",
+                                });
+                                return;
+                              }
+
+                              sendWhatsAppReminder(
+                                tenant.phone,
+                                `${tenant.firstName} ${tenant.lastName}`,
+                                room?.roomId || "",
+                                payment.month,
+                                payment.amount,
+                                payment.previous_reading,
+                                payment.current_reading,
+                                payment.units,
+                                electricity,
+                                room?.rent || 0,
+                                toast,
+                              );
+
+                              sendPaymentReminder(payment.id);
+
+                              toast({
+                                title: "Reminder Sent",
+                                description: `WhatsApp reminder sent to ${tenant.firstName}`,
+                              });
+                            }}
+                            disabled={payment.reminder_sent}
+                          >
+                            <Bell
+                              className={cn(
+                                "h-4 w-4",
+                                payment.reminder_sent && "text-muted-foreground",
+                              )}
+                            />
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-            <p className="font-medium text-foreground">
-              No payment records found
-            </p>
-            <p className="text-sm text-muted-foreground mt-1">
-              Add new payment entries to get started
-            </p>
+
+            {filteredPayments.length === 0 && (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <div className="h-16 w-16 rounded-full bg-muted flex items-center justify-center mb-4">
+                  <CreditCard className="h-8 w-8 text-muted-foreground" />
+                </div>
+                <p className="font-medium text-foreground">No payment records found</p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Add new payment entries to get started
+                </p>
+              </div>
+            )}
           </div>
-        )}
-        </div>
         </>
       )}
 
@@ -1068,28 +1154,27 @@ return (
           <div className="flex flex-col md:flex-row md:items-center justify-between mb-6 gap-4">
             <div>
               <h2 className="text-2xl font-bold text-foreground">Payment History</h2>
-              <p className="text-sm text-muted-foreground">All payment records sorted by latest date</p>
+              <p className="text-sm text-muted-foreground">
+                All payment records sorted by latest date —{" "}
+                <span className="text-success font-medium">{paidCount} Paid</span>
+                {" · "}
+                <span className="text-warning font-medium">{pendingCount} Pending</span>
+              </p>
             </div>
-            {/* <Button 
-              variant="outline" 
-              onClick={() => setCurrentView("payments")}
-            >
-              ← Back to Payments
-            </Button> */}
           </div>
 
-          {/* Room Filter - Above Table, Left Aligned */}
+          {/* Room Filter */}
           <div className="mb-4 flex items-center gap-3">
             <Label className="text-sm font-medium whitespace-nowrap">Filter by Room:</Label>
-            <Select 
-              value={historyFilterRoomPk || "all"} 
+            <Select
+              value={historyFilterRoomPk || "all"}
               onValueChange={(val) => setHistoryFilterRoomPk(val === "all" ? null : val)}
             >
               <SelectTrigger className="w-56">
                 <SelectValue placeholder="Select room..." />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Rooms </SelectItem>
+                <SelectItem value="all">All Rooms</SelectItem>
                 {historyRoomFilterOptions.map((option) => (
                   <SelectItem key={option.roomPk} value={option.roomPk}>
                     Room {option.roomId} ({option.count} months)
@@ -1117,18 +1202,33 @@ return (
                   {filteredHistoryPayments.map((p) => {
                     const room = getRoomByBill(p);
                     const tenant = getTenantByBill(p);
-                    const amount = p.totalAmount ?? p.amount ?? (getElectricityAmount(p) + (room?.rent || 0));
+                    const amount =
+                      p.totalAmount ?? p.amount ?? (getElectricityAmount(p) + (room?.rent || 0));
                     return (
                       <tr key={p.id}>
                         <td>{formatMonth(p.month || "May", p.year || currentYear)}</td>
-                        <td>{p.year || (p.date_month ? new Date(p.date_month).getFullYear() : currentYear)}</td>
+                        <td>
+                          {p.year ||
+                            (p.date_month
+                              ? new Date(p.date_month).getFullYear()
+                              : currentYear)}
+                        </td>
                         {!historyFilterRoomPk && (
                           <td>{room ? room.roomId || getRoomNumber(room.id) : "—"}</td>
                         )}
-                        <td>{tenant ? `${tenant.firstName} ${tenant.lastName}`.trim() : "—"}</td>
+                        <td>
+                          {tenant
+                            ? `${tenant.firstName} ${tenant.lastName}`.trim()
+                            : "—"}
+                        </td>
                         <td>{formatCurrency(amount)}</td>
                         <td>
-                          <span className={cn("status-badge text-xs", p.status === "paid" ? "status-paid" : "status-pending")}>
+                          <span
+                            className={cn(
+                              "status-badge text-xs",
+                              p.status === "paid" ? "status-paid" : "status-pending"
+                            )}
+                          >
                             {p.status === "paid" ? "Paid" : "Pending"}
                           </span>
                         </td>
@@ -1145,7 +1245,9 @@ return (
                   <CreditCard className="h-8 w-8 text-muted-foreground" />
                 </div>
                 <p className="font-medium text-foreground">
-                  {historyFilterRoomPk ? "No payments found for this room" : "No payment history found"}
+                  {historyFilterRoomPk
+                    ? "No payments found for this room"
+                    : "No payment history found"}
                 </p>
                 <p className="text-sm text-muted-foreground mt-1">
                   Payment records will appear here

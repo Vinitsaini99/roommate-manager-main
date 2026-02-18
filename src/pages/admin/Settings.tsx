@@ -14,40 +14,55 @@ export default function AdminSettings() {
   const [totalRooms, setTotalRooms] = useState(settings.totalRooms);
   const [electricityRate, setElectricityRate] = useState(settings.electricityRate);
   const [rentRates, setRentRates] = useState(settings.rentRates);
+  const [isSaving, setIsSaving] = useState(false);
 
   const handleSaveSettings = () => {
-    updateSettings({
-      electricityRate,
-      rentRates,
-    });
-    toast({
-      title: 'Settings saved',
-      description: 'Your settings have been updated successfully.',
-    });
+    try {
+      updateSettings({
+        electricityRate,
+        rentRates,
+        totalRooms,
+      });
+      toast({
+        title: 'Settings saved',
+        description: 'Your settings have been updated successfully.',
+      });
+    } catch (err) {
+      toast({
+        title: 'Error saving settings',
+        description: 'Failed to save settings.',
+        variant: 'destructive',
+      });
+    }
   };
 
-  const handleInitializeRooms = () => {
-  if (totalRooms < 1 || totalRooms > 500) {
-    toast({
-      title: 'Invalid room count',
-      description: 'Please enter a number between 1 and 500.',
-      variant: 'destructive',
-    });
-    return;
-  }
+  const handleInitializeRooms = async () => {
+    if (totalRooms < 1 || totalRooms > 500) {
+      toast({
+        title: 'Invalid room count',
+        description: 'Please enter a number between 1 and 500.',
+        variant: 'destructive',
+      });
+      return;
+    }
 
-  initializeRooms(totalRooms);
-
-  updateSettings({
-    ...settings,
-    totalRooms: totalRooms,
-  });
-
-  toast({
-    title: 'Rooms initialized',
-    description: `${totalRooms} rooms have been created.`,
-  });
-};
+    setIsSaving(true);
+    try {
+      await initializeRooms(totalRooms);
+      toast({
+        title: 'Rooms initialized',
+        description: `${totalRooms} rooms have been created.`,
+      });
+    } catch (err) {
+      toast({
+        title: 'Error initializing rooms',
+        description: 'Failed to initialize rooms.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
 
   const handleResetDefaults = () => {
@@ -103,10 +118,11 @@ export default function AdminSettings() {
               onChange={(e) => setTotalRooms(Number(e.target.value))}
               min={1}
               max={500}
+              disabled={isSaving}
             />
           </div>
-          <Button onClick={handleInitializeRooms} variant="outline">
-            Initialize Rooms
+          <Button onClick={handleInitializeRooms} variant="outline" disabled={isSaving}>
+            {isSaving ? "Initializing..." : "Initialize Rooms"}
           </Button>
         </div>
       </div>
@@ -131,6 +147,7 @@ export default function AdminSettings() {
               value={electricityRate}
               onChange={(e) => setElectricityRate(Number(e.target.value))}
               min={1}
+              disabled={isSaving}
             />
           </div>
           <span className="text-muted-foreground pb-2">₹ / unit</span>
@@ -159,6 +176,7 @@ export default function AdminSettings() {
                   type="number"
                   value={rentRates.singleNonAC}
                   onChange={(e) => setRentRates({ ...rentRates, singleNonAC: Number(e.target.value) })}
+                  disabled={isSaving}
                 />
               </div>
               <div className="space-y-2">
@@ -167,6 +185,7 @@ export default function AdminSettings() {
                   type="number"
                   value={rentRates.singleAC}
                   onChange={(e) => setRentRates({ ...rentRates, singleAC: Number(e.target.value) })}
+                  disabled={isSaving}
                 />
               </div>
             </div>
@@ -181,6 +200,7 @@ export default function AdminSettings() {
                   type="number"
                   value={rentRates.doubleNonAC}
                   onChange={(e) => setRentRates({ ...rentRates, doubleNonAC: Number(e.target.value) })}
+                  disabled={isSaving}
                 />
               </div>
               <div className="space-y-2">
@@ -189,6 +209,7 @@ export default function AdminSettings() {
                   type="number"
                   value={rentRates.doubleAC}
                   onChange={(e) => setRentRates({ ...rentRates, doubleAC: Number(e.target.value) })}
+                  disabled={isSaving}
                 />
               </div>
             </div>
@@ -203,6 +224,7 @@ export default function AdminSettings() {
                   type="number"
                   value={rentRates.tripleNonAC}
                   onChange={(e) => setRentRates({ ...rentRates, tripleNonAC: Number(e.target.value) })}
+                  disabled={isSaving}
                 />
               </div>
               <div className="space-y-2">
@@ -211,6 +233,7 @@ export default function AdminSettings() {
                   type="number"
                   value={rentRates.tripleAC}
                   onChange={(e) => setRentRates({ ...rentRates, tripleAC: Number(e.target.value) })}
+                  disabled={isSaving}
                 />
               </div>
             </div>
@@ -251,13 +274,13 @@ export default function AdminSettings() {
 
       {/* Action Buttons */}
       <div className="flex justify-end gap-3">
-        <Button variant="outline" onClick={handleResetDefaults}>
+        <Button variant="outline" onClick={handleResetDefaults} disabled={isSaving}>
           <RotateCcw className="h-4 w-4 mr-2" />
           Reset to Defaults
         </Button>
-        <Button onClick={handleSaveSettings} className="gradient-primary">
+        <Button onClick={handleSaveSettings} className="gradient-primary" disabled={isSaving}>
           <Save className="h-4 w-4 mr-2" />
-          Save Settings
+          {isSaving ? "Saving..." : "Save Settings"}
         </Button>
       </div>
     </div>

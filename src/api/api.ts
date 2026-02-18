@@ -1,6 +1,6 @@
 import axios from "axios";
 
-const BACKEND = import.meta.env.VITE_API_URL || "http://192.168.1.10:8000/";
+const BACKEND = import.meta.env.VITE_API_URL || "https://apipgms.auratechindia.in";
 
 console.info("[api] using backend:", BACKEND);
 
@@ -51,6 +51,9 @@ api.interceptors.response.use(
       localStorage.removeItem("ACCESS_TOKEN");
       localStorage.removeItem("REFRESH_TOKEN");
       localStorage.removeItem("rentease_user");
+      
+      // ✅ Token expire hone pe auto login redirect
+      window.location.href = "/login";
     }
 
     return Promise.reject(error);

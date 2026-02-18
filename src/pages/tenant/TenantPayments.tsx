@@ -11,7 +11,7 @@ export default function TenantPayments() {
   const { tenants, payments, settings } = useData();
 
   const tenant = tenants.find(t => t.email === user?.email);
-  const tenantPayments = payments.filter(p => p.tenant === tenant?.id);
+  const tenantPayments = payments.filter(p => p.tenant === tenant?.id && !p.hidden);
 
   const paidPayments = tenantPayments.filter(p => p.status === 'paid');
   const pendingPayments = tenantPayments.filter(p => p.status === 'pending');

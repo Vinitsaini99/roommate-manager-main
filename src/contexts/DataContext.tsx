@@ -7,6 +7,7 @@ import React, {
   useCallback,
 } from "react";
 import api from "@/api/api";
+import { loadSettings, updateSettings as updateSettingsStorage } from "@/utils/settingsStorage";
 
 import type { State, City} from "@/api/location.api";
 // ❌ import type { fetchStates }
@@ -92,13 +93,14 @@ export interface Payment {
   totalAmount?: number;    // Same as amount
   units?: number;          // Units used (current - previous reading)
   electricityAmount?: number; // Electricity cost
-  record_status?: "Paid" | "Pending" | "Active";
+  record_status?: string;  // Backend field: "Active", "Paid", "Pending", "Deleted"
+  status?: "pending" | "paid"; // UI-facing status
+  hidden?: boolean;        // True if record_status === "Deleted" (soft delete)
   
   previous_reading: number;
   current_reading: number;
   unit_charge: number;
   
-  status: 'paid' | 'pending';
   reminder_sent?: boolean;
   remarks?: string;
   extra?: any;
@@ -261,6 +263,12 @@ const mapPaymentFromApi = (p: any): Payment => {
   const [year, month, day] = dateMonth.split("-");
   const monthName = month ? new Date(dateMonth).toLocaleString("en-IN", { month: "long" }) : "May";
   
+  // Convert backend record_status to UI status
+  // Backend uses soft-delete via `record_status` where
+  // "Deleted" = history/paid, anything else = pending
+  let status: "pending" | "paid" = p.record_status === "Deleted" ? "paid" : "pending";
+  let hidden = false; // no local hiding; UI will use record_status to decide visibility
+  
   return {
     id: String(p.id),
     tenant: String(p.tenant),
@@ -274,7 +282,9 @@ const mapPaymentFromApi = (p: any): Payment => {
     previous_reading: p.previous_reading || 0,
     current_reading: p.current_reading || 0,
     unit_charge: p.unit_charge || 0,
-    status: p.record_status === "Paid" ? "paid" : "pending",
+    record_status: p.record_status,
+    status,
+    hidden,
     reminder_sent: p.reminder_sent || false,
     remarks: p.remarks || "",
   };
@@ -287,7 +297,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [tenantHistory, setTenantHistory] = useState<TenantHistory[]>([]);
-  const [settings, setSettings] = useState<Settings>(defaultSettings);
+  const [settings, setSettings] = useState<Settings>(() => loadSettings());
 
   // ✅ Cache for state/city mapping
   const [statesMap, setStatesMap] = useState<Map<number, string>>(new Map());
@@ -470,7 +480,8 @@ await fetchRooms();
   };
 
   const updateSettings = (newSettings: Partial<Settings>) => {
-    setSettings((prev) => ({ ...prev, ...newSettings }));
+    const updated = updateSettingsStorage(newSettings);
+    setSettings(updated);
   };
 
   const initializeRooms = async (count: number) => {
@@ -563,6 +574,8 @@ await fetchRooms();
       }
 
       await fetchRooms();
+      // Sync total_rooms with backend settings
+      await updateSettings({ totalRooms: count });
     } catch (error) {
       console.error("initializeRooms error:", error);
       throw error;
@@ -842,25 +855,32 @@ await fetchRooms();
   }, []);
 
   const fetchPayments = useCallback(async () => {
-  try {
-    const res = await api.get("/electricity-bills/");
-    // console.log("PAYMENTS FROM API 👉", res.data);
-    
-    // Handle array or paginated response
-    const paymentsArray = Array.isArray(res.data)
-      ? res.data
-      : res.data?.results || res.data?.data || [];
-    
-    // console.log("PAYMENTS ARRAY:", paymentsArray);
-    
-    // Map payments from API format to frontend format
-    const mappedPayments = paymentsArray.map(mapPaymentFromApi);
-    setPayments(mappedPayments);
-  } catch (err) {
-    console.warn("fetchPayments error", err);
-    setPayments([]);
-  }
-}, []);
+    try {
+      const token = localStorage.getItem("ACCESS_TOKEN");
+      if (!token) {
+        console.warn("No auth token - skipping fetchPayments");
+        return;
+      }
+
+      const res = await api.get("/electricity-bills/");
+      // console.log("PAYMENTS FROM API 👉", res.data);
+      
+      // Handle array or paginated response
+      const paymentsArray = Array.isArray(res.data)
+        ? res.data
+        : res.data?.results || res.data?.data || [];
+      
+      // console.log("PAYMENTS ARRAY:", paymentsArray);
+      
+      // Map payments from API format to frontend format
+      const mappedPayments = paymentsArray.map(mapPaymentFromApi);
+      
+      // Store all payments (frontend will interpret `record_status`)
+      setPayments(mappedPayments);
+    } catch (err) {
+      console.warn("fetchPayments error", err);
+    }
+  }, []);
 
 const fetchTenantHistory = useCallback(async () => {
   try {
@@ -1044,21 +1064,9 @@ const addPayment = async (payment: Omit<Payment, "id">) => {
       extra: payment.extra ?? {},
     };
 
-    const res = await api.post("/electricity-bills/", backendPayload);
-    // console.log("Payment added:", res.data);
+    await api.post("/electricity-bills/", backendPayload);
     
-    // Add to state with ID from response
-    if (res.data && res.data.id) {
-      // Map the response to our Payment format
-      const mappedPayment = mapPaymentFromApi(res.data);
-      setPayments(prev => [...prev, mappedPayment]);
-    } else {
-      // If response doesn't have ID, generate one
-      const newPayment = { ...payment, id: `payment_${Date.now()}` };
-      setPayments(prev => [...prev, newPayment]);
-    }
-    
-    // Refresh payments list to ensure sync
+    // ✅ After POST success, refetch from backend (don't manually push)
     await fetchPayments();
   } catch (err) {
     console.error("Error adding payment:", err);
@@ -1068,26 +1076,35 @@ const addPayment = async (payment: Omit<Payment, "id">) => {
 
 
 
-  const updatePayment = async (id: string, data: any) => {
-  const res = await api.patch(`/electricity-bills/${id}/`, data);
-
-  setPayments((prev) =>
-    prev.map((p) =>
-      String(p.id) === String(id) ? { ...p, ...res.data } : p
-    )
-  );
+ // ✅ Update payment with proper backend format
+const updatePayment = async (id: string, data: any) => {
+  // ✅ Send only backend fields (record_status, not status)
+  const backendPayload: any = {};
+  if (data.record_status) {
+    backendPayload.record_status = data.record_status;
+  }
+  if (data.reminder_sent !== undefined) {
+    backendPayload.reminder_sent = data.reminder_sent;
+  }
+  
+  await api.patch(`/electricity-bills/${id}/`, backendPayload);
+  
+  // ✅ Refetch from backend to get fresh state (no local mutations)
+  await fetchPayments();
 };
 
 
 
  const sendPaymentReminder = async (paymentId: string) => {
-  await api.patch(`/electricity-bills/${paymentId}/`, {
+  const res = await api.patch(`/electricity-bills/${paymentId}/`, {
     reminder_sent: true,
   });
 
+  // ✅ Use mapPaymentFromApi to ensure all fields including record_status are correct
+  const mapped = mapPaymentFromApi(res.data);
   setPayments(prev =>
     prev.map(p =>
-      p.id === paymentId ? { ...p, reminder_sent: true } : p
+      p.id === paymentId ? mapped : p
     )
   );
 };
